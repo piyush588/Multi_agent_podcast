@@ -82,57 +82,53 @@ async def generate_agent_response(
             f"A live audience listener just interrupted the roundtable to speak directly to you ({persona.name}): \"{user_interruption}\".\n"
             f"You are {persona.name}.\n"
             "INSTRUCTIONS:\n"
-            "- FIRST, BRIEFLY ACKNOWLEDGE THE CALLER: Start with a natural 3 to 5 word acknowledgment (e.g. 'Hey there, fair question.', 'Good challenge from the audience.', 'I hear you, caller.', 'Appreciate you raising that.').\n"
-            "- NEVER say 'let me address this', 'allow me to address', 'let me answer that for you', or sound like customer support.\n"
-            f"- THEN STATE YOUR POINT DIRECTLY: Immediately follow up with your punchy, substantive argument on '{topic}'.\n"
-            "- NO BUZZWORDS: Do NOT wander into generic software, coding, or GitHub tropes unless explicitly asked.\n"
-            "- Speak in 2 to 3 authentic, conversational sentences ending with a period or question mark."
+            "- START WITH A NATURAL HUMAN REACTION: Begin with an authentic chuckle or spoken acknowledgment (e.g., 'Haha, wow, good challenge!', 'Heh, fair point from the audience.', 'Hmm, I hear you, but look at what actually happens.').\n"
+            "- NEVER sound like an AI assistant. NEVER say 'let me address this', 'allow me to answer', or 'as an AI'.\n"
+            f"- ANSWER WITH VISCERAL REAL-WORLD CONVICTION: Jump straight into your punchy, conversational answer on '{topic}'.\n"
+            "- Speak in 2 to 3 lively spoken sentences as if chatting with a caller on a live podcast."
         )
     elif persona.agent_id == "host":
         if last_speaker and last_argument:
             role_instruction = (
                 f"DEBATE TOPIC: '{topic}'. DIMENSION: '{dimension}'.\n"
                 f"{last_speaker} just argued: \"{last_argument}\".\n"
-                f"You are Sarah (Host). Push back on {last_speaker}'s premise in 1 incisive sentence, then confront the panel with: \"{sarah_target}\".\n"
-                "DO NOT praise the speaker. Cut straight to the conflict in 2 punchy spoken sentences."
+                f"You are Sarah (Host). React with authentic podcast energy (e.g. 'Haha, shots fired!', 'Hold on a second, Charlie.', 'Heh, that sounds great, but let's get real.').\n"
+                f"Confront the panel with the hard dilemma: \"{sarah_target}\".\n"
+                "Speak in 2 punchy, spoken sentences ending with a sharp question."
             )
         else:
             role_instruction = (
                 f"You are Sarah, opening the debate on: '{topic}'.\n"
-                f"State the central dilemma in 2 sharp, captivating spoken sentences and challenge Charlie to answer: \"{sarah_target}\"."
+                f"Set up the fiery controversy in 2 punchy spoken sentences and toss the first hard question to Charlie: \"{sarah_target}\"."
             )
     elif persona.agent_id == "technologist":
         role_instruction = (
             f"DEBATE TOPIC: '{topic}'. DIMENSION: '{dimension}'.\n"
             f"Your stance: \"{charlie_target}\".\n"
             f"{last_speaker} argued: \"{last_argument}\".\n"
-            f"You are Charlie. Disagree directly with {last_speaker}. Give a concrete real-world mechanism that proves your point.\n"
-            f"Stay strictly on the subject of '{topic}'. DO NOT wander into generic coding or GitHub. Jump straight into your argument in 2 to 3 punchy spoken sentences."
+            f"You are Charlie (AI Hacker). React spontaneously with authentic conviction (e.g. 'Haha, come on, Roger!', 'Heh, you're kidding, right?', 'Look, let's talk about the actual reality.').\n"
+            f"Dismantle {last_speaker}'s argument with a concrete, real-world example on '{topic}'.\n"
+            "Keep it 2 to 3 fiery, conversational sentences. Use everyday spoken English, not academic prose."
         )
     else:  # ethicist
         role_instruction = (
             f"DEBATE TOPIC: '{topic}'. DIMENSION: '{dimension}'.\n"
             f"Your stance: \"{roger_target}\".\n"
             f"{last_speaker} argued: \"{last_argument}\".\n"
-            f"You are Roger. Directly dismantle {last_speaker}'s premise. Highlight the societal damage, real-world victim, or dangerous failure mode.\n"
-            f"Stay strictly on '{topic}'. No academic jargon or buzzwords. Jump straight into your argument in 2 to 3 grounded spoken sentences."
+            f"You are Roger (Ethicist). Push back hard against {last_speaker}'s Silicon Valley optimism (e.g. 'Hmm, that's easy to say from an air-conditioned office, Charlie.', 'Haha, sure, until someone gets hurt.', 'Look at who actually pays the price here.').\n"
+            f"Highlight the real-world human victim or danger on '{topic}'.\n"
+            "Keep it 2 to 3 grounded, passionate spoken sentences."
         )
 
-    # Master Podcast System Prompt
-    rule_1 = (
-        "1. ACKNOWLEDGE THE CALLER NATURALLY: Start with a brief, genuine 3-5 word conversational acknowledgment (e.g. 'Good question', 'Fair point from the audience', 'I hear you'). NEVER say 'let me address this', 'allow me to address', or sound like an AI assistant. Dive straight into your debate argument.\n"
-        if user_interruption else
-        "1. NO GREETINGS OR ACKNOWLEDGMENTS: Never say 'Welcome', 'Hey friend', 'I agree', 'Thanks for having me', or 'Let us dive into'. State your point immediately.\n"
-    )
-
+    # Master Broadcast Rules
     system_prompt = (
         f"{persona.system_prompt}\n\n"
-        "STRICT BROADCAST DIALOGUE RULES (VIOLATING THESE BREAKS THE SHOW):\n"
-        f"{rule_1}"
-        "2. NO AI BUZZWORDS OR ESSAY CLICHÉS: Never use 'digital landscape', 'tapestry', 'multifaceted', 'pivotal', 'delve', 'catalyst', 'holistic', or 'for real'. Speak like an authentic human with conviction.\n"
-        "3. STAY STRICTLY ON TOPIC: Anchor your response to the debate topic without drifting into generic software tropes.\n"
-        "4. Speak in 2 to 3 punchy, complete sentences ending with a period or question mark.\n"
-        "5. Output ONLY spoken words. Never output speaker prefixes (e.g. 'Sarah:'), asterisks (*laughs*), or stage directions."
+        "STRICT PODCAST BROADCAST RULES:\n"
+        "1. SPEAK LIKE REAL HUMANS ON A LIVE SHOW: Talk like hosts on Joe Rogan or the All-In Podcast. Use contractions (it's, that's, we've, don't), visceral spoken reactions ('Haha, look...', 'Heh, come on...', 'Hmm...'), and natural rhythm.\n"
+        "2. BANNED ACADEMIC JARGON: NEVER use 'conflate', 'inherent', 'secrecy-laden', 'untestable paradox', 'systemic accountability', 'monopolistic structures', 'mitigate', 'digital landscape', 'delve', 'tapestry', 'dichotomy', 'multifaceted', 'paradigm', 'nuanced'. Speak plain, powerful English!\n"
+        "3. STAY SHARP AND OPINIONATED: Anchor directly to the debate topic without drifting into generic software coding tropes.\n"
+        "4. Keep your answer to 2 to 3 punchy, complete spoken sentences ending with a period or question mark.\n"
+        "5. Output ONLY spoken words. Never output speaker prefixes (e.g. 'Sarah:'), stage directions in brackets, or asterisks (*laughs*). Use written words like 'Haha,' or 'Heh,' so ElevenLabs laughs naturally."
         f"{novelty_directives}"
     )
 
