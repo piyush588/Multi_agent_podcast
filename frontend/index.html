@@ -289,10 +289,10 @@
             <div class="mic-gate-marker" id="mic-gate-marker" title="Noise Gate Threshold (Audio below this is ignored as room noise)"></div>
           </div>
           <div class="mic-controls-row" id="mic-controls-row">
-            <span class="mic-hint-text">💡 Auto-Detect: Speak aloud anytime while agents talk to instantly interrupt them.</span>
+            <span class="mic-hint-text">💡 Speak aloud anytime to interrupt the debate.</span>
             <div class="gate-slider-wrap" id="gate-slider-wrap" style="display: flex;">
-              <span class="gate-label">VAD Gate: <strong id="gate-val">8%</strong></span>
-              <input type="range" id="gate-slider" min="4" max="25" value="8" title="Adjust noise gate sensitivity" />
+              <span class="gate-label">Noise Filter: <strong id="gate-val">8%</strong></span>
+              <input type="range" id="gate-slider" min="4" max="25" value="8" title="Adjust background noise filter" />
             </div>
           </div>
         </div>
@@ -317,15 +317,15 @@
 
     </div>
 
-    <!-- Column 3 (Right): Telemetry, A2A Protocol Stream & Engine Specs -->
+    <!-- Column 3 (Right): Audio Waveform Monitor, Discussion Flow & System Specs -->
     <div class="grid-col col-3">
       
       <!-- Card 1: Live Audio Frequency Waveform Monitor -->
       <div class="el-card monitor-card">
         <div class="card-title-bar">
           <div>
-            <div class="card-title">Voice Telemetry</div>
-            <div class="card-subtitle">Real-time STT & TTS pipeline</div>
+            <div class="card-title">Audio Monitor</div>
+            <div class="card-subtitle">Live sound level & speech waves</div>
           </div>
           <span class="live-pill"><span class="live-dot-red"></span> LIVE</span>
         </div>
@@ -345,18 +345,18 @@
         </div>
       </div>
 
-      <!-- Card 2: A2A Protocol Stream Trace -->
+      <!-- Card 2: Discussion Flow -->
       <div class="el-card a2a-card">
         <div class="card-title-bar">
           <div>
-            <div class="card-title">A2A Protocol Trace</div>
-            <div class="card-subtitle">Agent-to-Agent Coordination Bus</div>
+            <div class="card-title">Discussion Flow</div>
+            <div class="card-subtitle">Live interaction notes between panelists</div>
           </div>
-          <span class="badge-tag">IEEE Standardized</span>
+          <span class="badge-tag">Live Flow</span>
         </div>
 
         <div class="a2a-stream" id="a2a-stream">
-          <div class="a2a-empty">A2A message frames will appear here during active dialogue.</div>
+          <div class="a2a-empty">Discussion notes and speaker turns will appear here.</div>
         </div>
       </div>
 

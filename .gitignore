@@ -21,6 +21,7 @@ backend/whisper_cpp/
 # Audio artifacts
 *.wav
 *.mp3
+!frontend/bridges/*.mp3
 *.webm
 backend/test_output.mp3
 

@@ -803,6 +803,35 @@ if (SpeechRecognition) {
     browserRecognizer.interimResults = true;
     browserRecognizer.lang = "en-US";
 
+// Live Real-Time Auto-Caption Bubble Controller
+function updateLiveCaptionBubble(text) {
+  if (!transcriptFeed) return;
+  const emptyState = transcriptFeed.querySelector("#chat-empty-state");
+  if (emptyState) emptyState.remove();
+
+  let bubble = document.getElementById("live-caption-bubble");
+  if (!bubble) {
+    bubble = document.createElement("div");
+    bubble.id = "live-caption-bubble";
+    bubble.className = "msg-bubble user-msg live-caption-bubble";
+    transcriptFeed.appendChild(bubble);
+  }
+
+  bubble.innerHTML = `
+    <div class="live-caption-header">
+      <span class="live-caption-dot"></span>
+      <span>Auto-Caption (Speaking...)</span>
+    </div>
+    <div class="live-caption-text">${text || "Listening to your voice..."}</div>
+  `;
+  transcriptFeed.scrollTop = transcriptFeed.scrollHeight;
+}
+
+function removeLiveCaptionBubble() {
+  const bubble = document.getElementById("live-caption-bubble");
+  if (bubble) bubble.remove();
+}
+
     browserRecognizer.onresult = (event) => {
       let finalStr = "";
       let interimStr = "";
@@ -816,9 +845,10 @@ if (SpeechRecognition) {
       const combined = (finalStr + " " + interimStr).trim();
       if (combined) {
         liveRecognizedText = combined;
-        // Real-time live visual speech preview in input & status bar!
+        // Real-time live visual speech preview in input, status bar, and chat feed!
         if (interruptText) interruptText.value = combined;
         if (micStatusText) micStatusText.textContent = `🎙️ Heard: "${combined}"`;
+        updateLiveCaptionBubble(combined);
       }
     };
 
@@ -1024,6 +1054,41 @@ async function ensureMicStreamInitialized() {
 
         if ((spokenCandidate || audioBlob.size > 400) && !isInterruptionInFlight) {
           isInterruptionInFlight = true;
+          removeLiveCaptionBubble();
+
+          // Immediately render finalized user question capsule in transcript
+          appendTranscript({
+            sender: "Audience (Human)",
+            role: "Live Question",
+            content: spokenCandidate || "Spoken question to panelist",
+            isInterruption: true
+          });
+
+          // Instant Radio Bridge: Play Sarah's immediate 1-second bridge aloud!
+          // While bridge audio plays, the full LLM + ElevenLabs answer generates in parallel!
+          const lowerSpoken = (spokenCandidate || "").toLowerCase();
+          const target = interruptTarget ? interruptTarget.value : "all";
+          let bridgeFile = "/static/bridges/bridge_host.mp3";
+          if (lowerSpoken.includes("roger") || target === "ethicist") {
+            bridgeFile = "/static/bridges/bridge_ethicist.mp3";
+          } else if (lowerSpoken.includes("charlie") || target === "technologist") {
+            bridgeFile = "/static/bridges/bridge_technologist.mp3";
+          }
+
+          setOrbState("talking", "host");
+          const bridgeAudio = new Audio(bridgeFile);
+          let bridgeFinished = false;
+          let turnDataToPlay = null;
+
+          bridgeAudio.onended = () => {
+            bridgeFinished = true;
+            if (turnDataToPlay) {
+              handleTurnPayload(turnDataToPlay);
+              turnDataToPlay = null;
+            }
+          };
+          bridgeAudio.play().catch(() => { bridgeFinished = true; });
+
           if (micStatusText) micStatusText.textContent = "⚡ Routing question to panelist...";
           const formData = new FormData();
           if (spokenCandidate) {
@@ -1032,7 +1097,6 @@ async function ensureMicStreamInitialized() {
           if (audioBlob.size > 100) {
             formData.append("file", audioBlob, "interruption.webm");
           }
-          const target = interruptTarget ? interruptTarget.value : "all";
           if (target !== "all") formData.append("target_agent", target);
           if (interruptTarget) interruptTarget.value = "all";
 
@@ -1050,8 +1114,8 @@ async function ensureMicStreamInitialized() {
               setTimeout(() => {
                 if (micStatusText) {
                   micStatusText.textContent = micInputMode === "auto-vad"
-                    ? "🎙️ Hands-Free VAD Active — Speak clearly above noise gate!"
-                    : "🎙️ Hold Spacebar or click mic to speak (Push-To-Talk)";
+                    ? "🎙️ Auto-Detect Active — Just speak aloud anytime to interrupt"
+                    : "🎙️ Push-to-Talk: Click Mic or hold Spacebar to speak";
                 }
               }, 2000);
               return;
@@ -1065,7 +1129,14 @@ async function ensureMicStreamInitialized() {
               ...data.response,
               audio_base64: data.audio_base64 || data.response?.audio_base64
             };
-            handleTurnPayload(turnPayload);
+
+            // If the 1.2s bridge audio has already completed, start the panelist immediately!
+            // If the bridge is still playing, queue the panelist to start the millisecond the bridge ends!
+            if (bridgeFinished) {
+              handleTurnPayload(turnPayload);
+            } else {
+              turnDataToPlay = turnPayload;
+            }
           } catch (err) {
             console.error("Live interruption error:", err);
             if (micStatusText) micStatusText.textContent = "Interruption error occurred.";
@@ -1075,6 +1146,7 @@ async function ensureMicStreamInitialized() {
             setTimeout(() => { isInterruptionInFlight = false; }, 2000);
           }
         } else {
+          removeLiveCaptionBubble();
           isProcessingTurn = false;
           setOrbState("idle", null);
         }
@@ -1209,17 +1281,8 @@ if (scrollBottomBtn) {
 }
 
 // ============================================================================
-// 6. CURATED TOPIC PRESETS & QUICK SWITCHER
+// 6. CURATED TOPIC PRESETS & QUICK SWITCHER (CLEAN TEXT — NO EMOJIS)
 // ============================================================================
-const TOPIC_ICONS = {
-  "open-source ai": "⚡",
-  "public transit": "🚆",
-  "universal basic income": "💰",
-  "brain-computer interfaces": "🧠",
-  "nuclear fusion": "⚛️",
-  "synthetic media": "🎭"
-};
-
 function updateActiveTopicPill(activeTitle) {
   if (!topicPresetsList) return;
   const pills = topicPresetsList.querySelectorAll(".topic-preset-pill");
@@ -1250,18 +1313,14 @@ async function loadTopicPresets() {
       btn.setAttribute("data-topic", t.title);
       btn.title = `${t.title} (${t.battlegrounds_count} debate dimensions)`;
 
-      const icon = TOPIC_ICONS[t.key] || "💡";
-      // Extract short punchy title before the colon
-      const shortTitle = t.title.split(":")[0];
+      // Extract short punchy title before the colon without emojis
+      const shortTitle = t.title.split(":")[0].trim();
 
       if (currentTitle && (currentTitle.includes(t.title) || t.title.includes(currentTitle))) {
         btn.classList.add("active");
       }
 
-      btn.innerHTML = `
-        <span class="preset-icon">${icon}</span>
-        <span>${shortTitle}</span>
-      `;
+      btn.innerHTML = `<span>${shortTitle}</span>`;
 
       btn.addEventListener("click", async () => {
         if (currentTopicEl && currentTopicEl.textContent.trim() === t.title.trim()) {

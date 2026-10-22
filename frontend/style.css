@@ -1102,6 +1102,40 @@ body {
   line-height: 1.5;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
   max-width: 82%;
+  transition: all 0.2s ease;
+}
+
+/* Active Live Real-time Auto-Caption Bubble */
+.user-msg.live-caption-bubble {
+  border: 1.5px solid var(--accent-rose);
+  box-shadow: 0 0 16px rgba(244, 63, 94, 0.25);
+  animation: pulseCaptionGlow 1.2s infinite alternate ease-in-out;
+}
+
+.live-caption-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-rose);
+  margin-bottom: 4px;
+}
+
+.live-caption-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-rose);
+  box-shadow: 0 0 8px var(--accent-rose);
+  animation: pulseDot 0.8s infinite alternate;
+}
+
+@keyframes pulseCaptionGlow {
+  0% { border-color: rgba(244, 63, 94, 0.4); }
+  100% { border-color: rgba(244, 63, 94, 0.95); }
 }
 
 .scroll-bottom-btn {
