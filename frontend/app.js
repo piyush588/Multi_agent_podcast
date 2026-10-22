@@ -328,6 +328,8 @@ function clearChatUI() {
     clearTimeout(nextTurnTimer);
     nextTurnTimer = null;
   }
+  precomputedTurn = null;
+  audioQueue = [];
   setOrbState("idle", null);
   if (micStatusText) micStatusText.textContent = "🎙️ History cleared. Ready for fresh debate!";
 }
@@ -1383,9 +1385,6 @@ async function loadTopicPresets() {
           return;
         }
 
-        const shouldClear = confirm(`Switch debate topic to:\n"${t.title}"\n\nStart fresh roundtable debate for this topic?`);
-        if (!shouldClear) return;
-
         const fd = new FormData();
         fd.append("topic", t.title);
         fd.append("clear_history", "true");
@@ -1396,6 +1395,7 @@ async function loadTopicPresets() {
             if (currentTopicEl) currentTopicEl.textContent = t.title;
             clearChatUI();
             updateActiveTopicPill(t.title);
+            setTimeout(() => prefetchNextTurn(true), 400);
           }
         } catch (e) {
           console.error("Topic switch error:", e);
@@ -1409,19 +1409,25 @@ async function loadTopicPresets() {
   }
 }
 
-// Custom Topic Prompt with Clear Option
+// Custom Topic Prompt with Automatic Clean Reset
 if (changeTopicBtn) {
   changeTopicBtn.addEventListener("click", async () => {
     const current = currentTopicEl ? currentTopicEl.textContent : "";
     const newTopic = prompt("Enter new custom debate topic brief:", current);
     if (newTopic && newTopic.trim()) {
-      const shouldClear = confirm("Do you want to clear chat history for this new debate topic?");
       const fd = new FormData();
       fd.append("topic", newTopic.trim());
-      fd.append("clear_history", shouldClear ? "true" : "false");
-      await fetch(`${API_BASE}/api/topic`, { method: "POST", body: fd });
-      if (shouldClear) {
-        clearChatUI();
+      fd.append("clear_history", "true");
+      try {
+        const resp = await fetch(`${API_BASE}/api/topic`, { method: "POST", body: fd });
+        if (resp.ok) {
+          if (currentTopicEl) currentTopicEl.textContent = newTopic.trim();
+          clearChatUI();
+          updateActiveTopicPill(newTopic.trim());
+          setTimeout(() => prefetchNextTurn(true), 400);
+        }
+      } catch (e) {
+        console.error("Custom topic error:", e);
       }
     }
   });

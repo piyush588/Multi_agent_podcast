@@ -108,13 +108,15 @@ async def get_curated_topics():
     return {"topics": topics, "current": PODCAST_STATE["topic"]}
 
 @app.post("/api/topic")
-async def set_topic(topic: str = Form(...), clear_history: bool = Form(False)):
+async def set_topic(topic: str = Form(...), clear_history: bool = Form(True)):
     global topic_engine
     clean_topic = topic.strip()
+    is_different = clean_topic.lower() != PODCAST_STATE["topic"].lower()
     PODCAST_STATE["topic"] = clean_topic
     topic_engine = TopicEngine(clean_topic)
 
-    if clear_history:
+    # Always clear stale history when switching to a different debate topic
+    if clear_history or is_different:
         PODCAST_STATE["history"] = []
         PODCAST_STATE["a2a_traces"] = []
         PODCAST_STATE["active_speaker"] = None
@@ -127,7 +129,7 @@ async def set_topic(topic: str = Form(...), clear_history: bool = Form(False)):
             "role": "Topic Change",
             "content": f"The podcast topic was updated to: '{clean_topic}'"
         })
-    await broadcast_event("topic_updated", {"topic": clean_topic, "cleared": clear_history})
+    await broadcast_event("topic_updated", {"topic": clean_topic, "cleared": clear_history or is_different})
     return {"status": "ok", "topic": clean_topic}
 
 @app.post("/api/history/clear")

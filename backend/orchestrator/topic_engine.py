@@ -126,6 +126,30 @@ THEMATIC_BLUEPRINTS = {
                 "sarah_hook": "When synthetic reality is indistinguishable from live cameras, does public debate simply degenerate into tribal disbelief?"
             }
         ]
+    },
+    "windows vs macos": {
+        "title": "Windows vs. macOS: Which Is Truly Better?",
+        "category": "Consumer Tech & Operating Systems",
+        "battlegrounds": [
+            {
+                "dimension": "Hardware Freedom & Gaming Supremacy vs Silicon Optimization",
+                "charlie_angle": "Windows gives you total hardware autonomy: custom rigs, swappable GPUs, unbeatable gaming compatibility, and price-to-performance without paying the 300% Apple RAM and SSD upgrade tax.",
+                "roger_angle": "macOS with Apple Silicon delivers unmatched battery life, unified memory bandwidth, zero thermal throttling, and hardware-software optimization that Windows laptops simply cannot match.",
+                "sarah_hook": "Is hardware customizability and gaming worth Windows driver quirks and battery drain, or does Apple's integrated silicon actually deliver a superior daily machine?"
+            },
+            {
+                "dimension": "Open Computing Autonomy vs Walled Garden Security",
+                "charlie_angle": "On Windows, you actually own your computer. You can sideload any executable, run legacy software, and tweak registry settings without Apple's Gatekeeper treating you like a child.",
+                "roger_angle": "Windows is a legacy mess crammed with telemetry, forced Cortana/Copilot bloatware, and constant security vulnerabilities. macOS gives ordinary users a secure UNIX foundation that just works out of the box.",
+                "sarah_hook": "Do users want raw computing freedom with security risks, or a pristine walled garden where Apple dictates what software you can run?"
+            },
+            {
+                "dimension": "Real-World Workflow, Developer Speed & Ecosystem Polish",
+                "charlie_angle": "With WSL2, Windows lets you run a full native Linux kernel alongside gaming and enterprise tools. It is the most versatile workstation setup on earth.",
+                "roger_angle": "macOS is POSIX-compliant UNIX by default, with Core Audio, seamless AirDrop, and a distraction-free creative interface that doesn't randomly reboot for updates in the middle of a presentation.",
+                "sarah_hook": "When deadlines are on the line, which operating system actually gets out of your way and lets you finish your work?"
+            }
+        ]
     }
 }
 
@@ -138,6 +162,10 @@ class TopicEngine:
 
     def _initialize_battlegrounds(self, topic: str) -> List[Dict[str, str]]:
         lower = topic.lower()
+        # Direct check for windows / macos
+        if any(w in lower for w in ["windows", "macos", "mac vs", "windows vs", "operating system"]):
+            return THEMATIC_BLUEPRINTS["windows vs macos"]["battlegrounds"]
+
         # 1. Match full key or full blueprint title
         for key, blueprint in THEMATIC_BLUEPRINTS.items():
             b_title = blueprint.get("title", "").lower()
@@ -148,25 +176,25 @@ class TopicEngine:
             words = [w for w in key.split() if len(w) > 3]
             if any(w in lower for w in words):
                 return blueprint["battlegrounds"]
-        # Generic dynamic battlegrounds for arbitrary user topics
+        # Generic dynamic battlegrounds for arbitrary user topics (strictly anchored to topic, no AI regulatory jargon)
         return [
             {
-                "dimension": "Innovation Velocity vs Precautionary Guardrails",
-                "charlie_angle": f"Move fast, build open prototypes, and let market testing and rapid iteration solve the challenges around {topic}.",
-                "roger_angle": f"Unchecked deployment of {topic} without institutional oversight, ethics reviews, and risk buffers invites catastrophic unintended consequences.",
-                "sarah_hook": f"What is the actual trade-off between moving aggressively forward on {topic} versus waiting for regulatory consensus?"
+                "dimension": "Core Value & Practical Utility",
+                "charlie_angle": f"Focus on real-world performance, user freedom, and practical everyday advantages of {topic}.",
+                "roger_angle": f"Expose the hidden costs, reliability compromises, and real trade-offs behind {topic}.",
+                "sarah_hook": f"What is the single biggest real-world advantage or fatal flaw when it comes to {topic}?"
             },
             {
-                "dimension": "Decentralized Access vs Centralized Institutional Control",
-                "charlie_angle": f"Democratize the tools and decision-making around {topic} so everyday builders and communities have autonomy.",
-                "roger_angle": f"Without centralized accountability and enforceable standards, {topic} will be exploited by bad actors and private cartels.",
-                "sarah_hook": f"Who should hold the ultimate keys to governing {topic}—the open community or certified regulatory institutions?"
+                "dimension": "User Autonomy vs Polish & Stability",
+                "charlie_angle": f"Users should have total flexibility, customization, and control without artificial limits on {topic}.",
+                "roger_angle": f"Without curated standards, consistency, and stability, {topic} becomes frustrating and unreliable for everyday people.",
+                "sarah_hook": f"Where is the balance between total flexibility and polished reliability on {topic}?"
             },
             {
-                "dimension": "Real-World Economics & Human Impact",
-                "charlie_angle": f"The long-term economic gains, efficiency breakthroughs, and new opportunities created by {topic} far outweigh transition friction.",
-                "roger_angle": f"We cannot ignore the human cost, systemic inequality, and displacement that {topic} creates for vulnerable populations.",
-                "sarah_hook": f"How do we ensure the benefits of {topic} are shared broadly rather than captured by a handful of players?"
+                "dimension": "Long-Term Value & Real-World Economics",
+                "charlie_angle": f"The long-term flexibility, adaptability, and ecosystem value of {topic} make it the superior choice.",
+                "roger_angle": f"Look at the hidden expenses, support headaches, and actual total cost of ownership on {topic}.",
+                "sarah_hook": f"When you look at actual value for money and time spent, which side really wins on {topic}?"
             }
         ]
 

@@ -38,21 +38,26 @@ def clean_speech_text(text: str, persona_name: str) -> str:
     text = text.strip(' \t\n\r"\'')
     # 1. Strip chat template tokens like 'assistant', 'user', 'system'
     text = re.sub(r'^(?:assistant|user|system)\s*[:\-]?\s*', '', text, flags=re.IGNORECASE)
-    # 2. Strip persona names and known role prefixes
+    # 2. Strip persona names and known role prefixes at start
     known_tags = r'^(?:sarah|charlie|roger|host|moderator|technologist|ethicist|panelist|speaker)\s*[:\-]?\s*'
     text = re.sub(known_tags, '', text, flags=re.IGNORECASE)
-    # 3. Strip bracketed speaker tags e.g. [Sarah]: or [Charlie] -
+    # 3. Strip bracketed speaker tags at start e.g. [Sarah]: or [Charlie] -
     text = re.sub(r'^\[[A-Za-z\s]+\]\s*[:\-]?\s*', '', text)
-    # 4. Strip robotic assistant filler phrases like 'let me address this for you'
+    # 4. Truncate if the model starts roleplaying or scripting subsequent speakers in the same turn
+    # e.g., "Roger: ...", "\nCharlie:", "Sarah:", 'Now Charlie: ...'
+    subsequent_speaker = re.search(r'(?:[\.\?\!\"]\s+|\n+)(?:Now\s+|Over to\s+)?(?:Roger|Charlie|Sarah|Host|Moderator|Technologist|Ethicist|Caller|Audience)\s*[:\-]', text, flags=re.IGNORECASE)
+    if subsequent_speaker:
+        text = text[:subsequent_speaker.start() + (1 if text[subsequent_speaker.start()] in '.!?' else 0)].strip()
+    # 5. Strip robotic assistant filler phrases
     text = re.sub(r'\b(?:let me|allow me to)\s+(?:address|answer|tackle|respond to|take)\s+(?:this\s+for\s+you|that\s+for\s+you|this|that|your question|your point)[\s,.:;]*(?:caller|friend|listener|audience member)?[\s,.:;]*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\b(?:to address (?:your|this)|regarding your)\s+(?:point|question|inquiry)[\s,.:;]*', '', text, flags=re.IGNORECASE)
-    # 5. Strip parenthetical stage directions like (laugh), (chuckles), (pauses), [sighs]
+    # 6. Strip parenthetical stage directions like (laugh), (chuckles), (pauses), [sighs]
     text = re.sub(r'[\(\[][a-zA-Z\s]+[\)\]]', '', text)
-    # 6. Strip asterisks like *laughs*, *smiles*
+    # 7. Strip asterisks like *laughs*, *smiles*
     text = re.sub(r'\*[^*]+\*', '', text)
-    # 7. Normalize whitespace and enclosing quotes
+    # 8. Normalize whitespace and enclosing quotes
     text = re.sub(r'\s+', ' ', text).strip(' \t\n\r"\'')
-    # 8. Ensure no mid-sentence truncation
+    # 9. Ensure no mid-sentence truncation
     text = ensure_complete_sentences(text)
     return text
 
@@ -164,7 +169,15 @@ async def generate_agent_response(
                             "repeat_penalty": 1.25,
                             "presence_penalty": 0.5,
                             "frequency_penalty": 0.3,
-                            "num_predict": 180
+                            "num_predict": 180,
+                            "stop": [
+                                "\nSarah:", "\nCharlie:", "\nRoger:",
+                                "\nSarah -", "\nCharlie -", "\nRoger -",
+                                "\nHost:", "\nTechnologist:", "\nEthicist:",
+                                "\nSarah (", "\nCharlie (", "\nRoger (",
+                                "\n[Sarah", "\n[Charlie", "\n[Roger",
+                                "\nAudience:", "\nCaller:", "\nUser:"
+                            ]
                         }
                     }
                 )
