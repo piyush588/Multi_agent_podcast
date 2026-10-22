@@ -1022,11 +1022,11 @@ function startRecordingSession(isManual = false) {
     }
   }
 
-  // Safety hard-stop at 10 seconds
+  // Generous safety hard-stop at 45 seconds (allows full conversational questions)
   if (maxSpeechTimer) clearTimeout(maxSpeechTimer);
   maxSpeechTimer = setTimeout(() => {
     stopAndSendRecording();
-  }, 10000);
+  }, 45000);
 }
 
 function stopAndSendRecording() {
@@ -1241,13 +1241,19 @@ async function ensureMicStreamInitialized() {
           }
         } else if (isSpeakingDetected && rms < (vadThreshold * 0.70)) {
           if (!speechSilenceTimer) {
-            // Conversational silence delay: 1300ms-1600ms ensures natural pauses/breaths mid-question are not cut off
+            // Conversational silence delay: 1500ms-2200ms ensures deep questions and breathing pauses are not cut off
             const duration = Date.now() - recordingStartTime;
             const words = (liveRecognizedText || "").trim().split(/\s+/).filter(Boolean);
-            let silenceDelay = 1300;
-            if (words.length <= 3 || duration < 2000) {
-              silenceDelay = 1600; // Extra breathing room when caller starts or calls a name
+            const lastWord = words.length > 0 ? words[words.length - 1].toLowerCase().replace(/[^a-z]/g, '') : '';
+            const incompleteConnectors = ["and", "or", "but", "because", "so", "that", "if", "when", "about", "to", "for", "with", "like", "which", "where", "is", "are", "do", "think"];
+            
+            let silenceDelay = 1500;
+            if (words.length <= 4 || duration < 2500) {
+              silenceDelay = 2000; // Extra breathing room when starting
+            } else if (incompleteConnectors.includes(lastWord)) {
+              silenceDelay = 2200; // User clearly paused mid-thought on a connector
             }
+
             speechSilenceTimer = setTimeout(() => {
               stopAndSendRecording();
             }, silenceDelay);
@@ -1283,31 +1289,8 @@ window.addEventListener("keyup", (e) => {
   }
 });
 
-// Mic Button: Supports both Click to Toggle and Hold to Talk!
-let micBtnHoldTimer = null;
+// Mic Button: Clean, reliable Toggle-to-Record & Hold-Spacebar Shortcut
 if (micBtn) {
-  micBtn.addEventListener("mousedown", async (e) => {
-    e.stopPropagation();
-    await ensureMicStreamInitialized();
-    micBtnHoldTimer = setTimeout(() => {
-      // User is holding down the button
-      if (!isManualRecording) {
-        startRecordingSession(true);
-      }
-    }, 200);
-  });
-
-  micBtn.addEventListener("mouseup", (e) => {
-    e.stopPropagation();
-    if (micBtnHoldTimer) {
-      clearTimeout(micBtnHoldTimer);
-      micBtnHoldTimer = null;
-    }
-    if (isManualRecording) {
-      stopAndSendRecording();
-    }
-  });
-
   micBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
     await ensureMicStreamInitialized();

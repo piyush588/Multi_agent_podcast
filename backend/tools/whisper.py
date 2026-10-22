@@ -56,8 +56,8 @@ def clean_whisper_text(raw_text: str) -> str:
     # Remove bracketed/parenthetical text like [BLANK_AUDIO], (music), [applause]
     clean = re.sub(r'\[.*?\]', '', raw_text)
     clean = re.sub(r'\(.*?\)', '', clean)
-    # Remove repeated single letter noises (e.g. "LLLL!")
-    clean = re.sub(r'\b[A-Za-z]\b', '', clean)
+    # Remove stray consonant noises (preserve real words 'I' and 'a')
+    clean = re.sub(r'\b[b-hj-zB-HJ-Z]\b', '', clean)
     clean = re.sub(r'\s+', ' ', clean).strip()
 
     # Normalize lower for blacklist check
@@ -65,9 +65,9 @@ def clean_whisper_text(raw_text: str) -> str:
     if lower in KNOWN_HALLUCINATIONS or not lower:
         return ""
 
-    # Reject if only punctuation or single words that are common filler
-    words = [w for w in re.findall(r'\b\w+\b', clean) if len(w) > 1]
-    if len(words) < 2 and not any(k in lower for k in ["charlie", "roger", "sarah", "transit", "fleet", "safety", "tech", "scale", "why", "how", "what"]):
+    # Reject if only punctuation or empty
+    words = [w for w in re.findall(r'\b\w+\b', clean)]
+    if len(words) < 2 and not any(k in lower for k in ["charlie", "roger", "sarah", "why", "how", "what", "stop"]):
         return ""
 
     return clean.strip()

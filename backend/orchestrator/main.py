@@ -439,14 +439,29 @@ async def handle_human_interruption(
 ):
     async with ROUNDTABLE_LOCK:
         interruption_text = ""
-        # Always run high-accuracy GPU Whisper on real audio when uploaded
+        whisper_text = ""
         if file:
             audio_bytes = await file.read()
-            interruption_text = await call_whisper(audio_bytes)
+            whisper_text = (await call_whisper(audio_bytes)).strip()
 
-        # Fallback to client text only if Whisper was silent or text was typed
-        if not interruption_text and text:
-            interruption_text = text.strip()
+        client_text = (text or "").strip()
+
+        # Intelligent STT Arbitration:
+        # Pick whichever transcription captured the fuller, more complete thought
+        whisper_words = whisper_text.split()
+        client_words = client_text.split()
+
+        if whisper_text and client_text:
+            if len(client_words) > len(whisper_words) + 1:
+                interruption_text = client_text
+            else:
+                interruption_text = whisper_text
+        elif whisper_text:
+            interruption_text = whisper_text
+        elif client_text:
+            interruption_text = client_text
+        else:
+            interruption_text = ""
 
         interruption_text = interruption_text.strip()
         words = interruption_text.split()
