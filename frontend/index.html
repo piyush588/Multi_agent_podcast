@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=3.5" />
 </head>
 <body>
   <!-- ElevenLabs Minimal Topbar Navigation -->
@@ -248,6 +248,25 @@
           </div>
         </div>
 
+        <!-- Signature Live Auto-Caption / Subtitle Dock (CC) -->
+        <div class="live-caption-dock" id="live-caption-dock">
+          <div class="caption-dock-header">
+            <div class="caption-dock-left">
+              <span class="cc-chip">CC</span>
+              <span class="caption-pulse-dot"></span>
+              <span class="caption-label-main">LIVE AUTO-CAPTION</span>
+            </div>
+            <div class="caption-dock-right">
+              <span class="caption-speaker-tag" id="caption-speaker-tag">STUDIO STANDBY</span>
+            </div>
+          </div>
+          <div class="caption-viewport">
+            <p class="caption-display-text" id="caption-display-text">
+              <span class="caption-placeholder">Studio standby. Start roundtable or speak into mic to see real-time subtitles...</span>
+            </p>
+          </div>
+        </div>
+
         <!-- Message Feed (ElevenLabs Capsules) -->
         <div class="chat-messages" id="transcript-feed">
           <div class="chat-empty-state" id="chat-empty-state">
@@ -394,7 +413,7 @@
   </main>
 
   <audio id="audio-player" style="display: none;"></audio>
-  <script src="/static/orb.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/orb.js?v=3.5"></script>
+  <script src="/static/app.js?v=3.5"></script>
 </body>
 </html>

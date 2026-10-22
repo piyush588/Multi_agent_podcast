@@ -29,13 +29,16 @@ def clean_speech_text(text: str, persona_name: str) -> str:
     text = re.sub(known_tags, '', text, flags=re.IGNORECASE)
     # 3. Strip bracketed speaker tags e.g. [Sarah]: or [Charlie] -
     text = re.sub(r'^\[[A-Za-z\s]+\]\s*[:\-]?\s*', '', text)
-    # 4. Strip parenthetical stage directions like (laugh), (chuckles), (pauses), [sighs]
+    # 4. Strip robotic assistant filler phrases like 'let me address this for you'
+    text = re.sub(r'\b(?:let me|allow me to)\s+(?:address|answer|tackle|respond to|take)\s+(?:this\s+for\s+you|that\s+for\s+you|this|that|your question|your point)[\s,.:;]*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b(?:to address (?:your|this)|regarding your)\s+(?:point|question|inquiry)[\s,.:;]*', '', text, flags=re.IGNORECASE)
+    # 5. Strip parenthetical stage directions like (laugh), (chuckles), (pauses), [sighs]
     text = re.sub(r'[\(\[][a-zA-Z\s]+[\)\]]', '', text)
-    # 5. Strip asterisks like *laughs*, *smiles*
+    # 6. Strip asterisks like *laughs*, *smiles*
     text = re.sub(r'\*[^*]+\*', '', text)
-    # 6. Normalize whitespace and enclosing quotes
+    # 7. Normalize whitespace and enclosing quotes
     text = re.sub(r'\s+', ' ', text).strip(' \t\n\r"\'')
-    # 7. Ensure no mid-sentence truncation
+    # 8. Ensure no mid-sentence truncation
     text = ensure_complete_sentences(text)
     return text
 
@@ -62,10 +65,11 @@ async def generate_agent_response(
     if user_interruption:
         role_instruction = (
             f"DEBATE TOPIC: '{topic}'. DIMENSION: '{dimension}'.\n"
-            f"A live audience listener just interrupted the roundtable to address you ({persona.name}): \"{user_interruption}\".\n"
+            f"A live audience listener just interrupted the roundtable to speak directly to you ({persona.name}): \"{user_interruption}\".\n"
             f"You are {persona.name}.\n"
             "INSTRUCTIONS:\n"
-            "- FIRST, BRIEFLY ACKNOWLEDGE THE CALLER: Start with a brief, natural 3 to 5 word acknowledgment (e.g. 'Hey there, fair question.', 'Good challenge from the audience.', 'I hear you, caller.', 'Appreciate you raising that.').\n"
+            "- FIRST, BRIEFLY ACKNOWLEDGE THE CALLER: Start with a natural 3 to 5 word acknowledgment (e.g. 'Hey there, fair question.', 'Good challenge from the audience.', 'I hear you, caller.', 'Appreciate you raising that.').\n"
+            "- NEVER say 'let me address this', 'allow me to address', 'let me answer that for you', or sound like customer support.\n"
             f"- THEN STATE YOUR POINT DIRECTLY: Immediately follow up with your punchy, substantive argument on '{topic}'.\n"
             "- NO BUZZWORDS: Do NOT wander into generic software, coding, or GitHub tropes unless explicitly asked.\n"
             "- Speak in 2 to 3 authentic, conversational sentences ending with a period or question mark."
@@ -102,7 +106,7 @@ async def generate_agent_response(
 
     # Master Podcast System Prompt
     rule_1 = (
-        "1. ACKNOWLEDGE THE CALLER NATURALLY: Start with a brief, genuine 3-5 word greeting or acknowledgment of the caller, then dive straight into your point.\n"
+        "1. ACKNOWLEDGE THE CALLER NATURALLY: Start with a brief, genuine 3-5 word conversational acknowledgment (e.g. 'Good question', 'Fair point from the audience', 'I hear you'). NEVER say 'let me address this', 'allow me to address', or sound like an AI assistant. Dive straight into your debate argument.\n"
         if user_interruption else
         "1. NO GREETINGS OR ACKNOWLEDGMENTS: Never say 'Welcome', 'Hey friend', 'I agree', 'Thanks for having me', or 'Let us dive into'. State your point immediately.\n"
     )

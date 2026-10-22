@@ -32,6 +32,59 @@ const currentTimeEl = document.getElementById("current-time");
 const speakerStatusCaption = document.getElementById("speaker-status-caption");
 const themeBtn = document.getElementById("theme-btn");
 
+// Signature Live Auto-Caption Dock (CC) Controller
+const liveCaptionDock = document.getElementById("live-caption-dock");
+const captionSpeakerTag = document.getElementById("caption-speaker-tag");
+const captionDisplayText = document.getElementById("caption-display-text");
+
+let currentCaptionWords = [];
+let currentCaptionSpeaker = "";
+
+function setLiveAutoCaptionSpeaker(speakerName, roleName, isUser = false) {
+  if (!captionSpeakerTag || !liveCaptionDock) return;
+  if (isUser) {
+    liveCaptionDock.className = "live-caption-dock user-active";
+    captionSpeakerTag.textContent = "🔴 YOU (AUDIENCE)";
+    captionSpeakerTag.style.color = "var(--accent-rose)";
+    captionSpeakerTag.style.borderColor = "var(--accent-rose)";
+  } else if (speakerName) {
+    liveCaptionDock.className = "live-caption-dock active-speaking";
+    captionSpeakerTag.textContent = `${speakerName.toUpperCase()}${roleName ? ' • ' + roleName.toUpperCase() : ''}`;
+    let color = "#FF6B4A";
+    if (speakerName.includes("Charlie")) color = "#F59E0B";
+    else if (speakerName.includes("Roger")) color = "#2563EB";
+    captionSpeakerTag.style.color = color;
+    captionSpeakerTag.style.borderColor = color;
+  } else {
+    liveCaptionDock.className = "live-caption-dock";
+    captionSpeakerTag.textContent = "STUDIO STANDBY";
+    captionSpeakerTag.style.color = "var(--text-secondary)";
+    captionSpeakerTag.style.borderColor = "var(--border-subtle)";
+  }
+}
+
+function updateLiveAutoCaptionText(text, isPlaceholder = false) {
+  if (!captionDisplayText) return;
+  if (isPlaceholder) {
+    captionDisplayText.innerHTML = `<span class="caption-placeholder">${text}</span>`;
+  } else {
+    captionDisplayText.textContent = text;
+  }
+}
+
+function streamLiveCaptionForTurn(turnText, speakerName, roleName) {
+  currentCaptionWords = (turnText || "").split(" ").filter(w => w.trim().length > 0);
+  currentCaptionSpeaker = speakerName;
+  setLiveAutoCaptionSpeaker(speakerName, roleName, false);
+  updateLiveAutoCaptionText(turnText);
+}
+
+function resetLiveAutoCaption() {
+  currentCaptionWords = [];
+  setLiveAutoCaptionSpeaker(null, null, false);
+  updateLiveAutoCaptionText("Studio standby. Start roundtable or speak into mic to see real-time subtitles...", true);
+}
+
 // Instantiate ElevenLabs Interactive Particle Voice Sphere
 let particleSphere = null;
 if (window.ElevenLabsParticleSphere) {
@@ -326,8 +379,10 @@ function handleTurnPayload(payload) {
 
   if (payload.audio_base64) {
     setOrbState("talking", payload.agent_id);
+    streamLiveCaptionForTurn(payload.content, payload.sender, payload.role);
     playAudioBase64(payload.audio_base64, () => {
       setOrbState("idle", null);
+      setTimeout(resetLiveAutoCaption, 1200);
       isProcessingTurn = false;
       isAudioPlaying = false;
       isInterruptionInFlight = false;
@@ -360,8 +415,10 @@ function handleTurnPayload(payload) {
   } else {
     // If no audio (or fallback), hold speaking state for 2s then continue
     setOrbState("talking", payload.agent_id);
+    streamLiveCaptionForTurn(payload.content, payload.sender, payload.role);
     setTimeout(() => {
       setOrbState("idle", null);
+      setTimeout(resetLiveAutoCaption, 800);
       isProcessingTurn = false;
       isAudioPlaying = false;
       isInterruptionInFlight = false;
@@ -371,10 +428,10 @@ function handleTurnPayload(payload) {
           precomputedTurn = null;
           handleTurnPayload(nextTurnToPlay);
         } else {
-          nextTurnTimer = setTimeout(triggerNextTurn, 500);
+          nextTurnTimer = setTimeout(triggerNextTurn, 600);
         }
       }
-    }, 2000);
+    }, 2500);
   }
 }
 
@@ -423,7 +480,7 @@ function playAudioBase64(base64Data, onEndCallback) {
   }
 }
 
-// Audio Scrubber Tracking
+// Audio Scrubber Tracking & Real-Time Word Highlighting
 audioPlayer.addEventListener("timeupdate", () => {
   if (audioPlayer.duration && !isNaN(audioPlayer.duration)) {
     const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
@@ -432,6 +489,18 @@ audioPlayer.addEventListener("timeupdate", () => {
       const mins = Math.floor(audioPlayer.currentTime / 60);
       const secs = Math.floor(audioPlayer.currentTime % 60);
       currentTimeEl.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    }
+
+    // Real-time live subtitle streaming in the Auto-Caption Dock!
+    if (currentCaptionWords.length > 0 && captionDisplayText && isAudioPlaying) {
+      const wordIdx = Math.min(
+        currentCaptionWords.length - 1,
+        Math.floor((audioPlayer.currentTime / audioPlayer.duration) * currentCaptionWords.length)
+      );
+      const before = currentCaptionWords.slice(0, wordIdx).join(" ");
+      const activeWord = currentCaptionWords[wordIdx] || "";
+      const after = currentCaptionWords.slice(wordIdx + 1).join(" ");
+      captionDisplayText.innerHTML = `${before} <span class="caption-word-active">${activeWord}</span> ${after}`;
     }
   }
 });
@@ -875,8 +944,9 @@ function initContinuousSpeechRecognition() {
         liveRecognizedText = combined;
         if (interruptText) interruptText.value = combined;
         if (micStatusText) micStatusText.textContent = `🎙️ Heard: "${combined}"`;
-        // Show live real-time auto-caption immediately
+        // Show live real-time auto-caption immediately in both dock and bubble
         updateLiveCaptionBubble(combined, "Auto-Caption (Speaking...)");
+        updateLiveAutoCaptionText(combined);
       }
     };
 
@@ -978,6 +1048,8 @@ function startRecordingSession(isManual = false) {
   // Ensure speech recognizer is active and immediately display live auto-caption bubble!
   initContinuousSpeechRecognition();
   updateLiveCaptionBubble("Listening to your voice...", "Auto-Caption (Speaking...)");
+  setLiveAutoCaptionSpeaker("Audience", "Live Voice", true);
+  updateLiveAutoCaptionText("Listening to your voice... Speak your question aloud.");
 
   liveAudioChunks = [];
   if (liveMediaRecorder && liveMediaRecorder.state === "inactive") {
@@ -1011,6 +1083,7 @@ function stopAndSendRecording() {
   // Update live caption bubble status without prematurely removing it
   const currentPreview = liveRecognizedText.trim();
   updateLiveCaptionBubble(currentPreview || "Transcribing voice with Whisper...", "Auto-Caption (Routing...)");
+  updateLiveAutoCaptionText(currentPreview || "Transcribing voice with Whisper AI...");
 
   if (micLiveDot) {
     micLiveDot.classList.remove("recording");
@@ -1155,6 +1228,7 @@ async function ensureMicStreamInitialized() {
 
             const finalTranscript = data.interruption || spokenCandidate;
             const routedTo = data.response?.sender || "Panelist";
+            updateLiveAutoCaptionText(finalTranscript);
             const converted = finalizeLiveCaptionBubble(finalTranscript, routedTo);
             if (!converted) {
               appendTranscript({
