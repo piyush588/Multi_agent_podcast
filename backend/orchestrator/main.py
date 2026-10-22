@@ -440,6 +440,30 @@ def resolve_target_agent(interruption_text: str, explicit_target: Optional[str] 
         return "technologist"
     return "technologist"
 
+def extract_core_question(text: str) -> str:
+    """Strips rambles, fillers, and false starts so agents debate the core user thought."""
+    text = text.strip(" \t\n\r\"'")
+    # 1. Filter out pure noise / thank you artifacts
+    noise_triggers = [
+        r'^(?:thank\s+you|thanks|cheers|bye|okay\s+bye|you)[\s\.\!\?]*$',
+        r'^(?:so+|um+|uh+|ah+|ok|okay)[\s\.\!\?]*$'
+    ]
+    for pat in noise_triggers:
+        if re.match(pat, text, flags=re.IGNORECASE):
+            return ""
+
+    # 2. Strip opening conversational fluff & padding
+    preambles = [
+        r'^(?:um+|uh+|ah+|so+|like|well|yeah|listen|wait|hold on|look|basically)[\s,]+',
+        r'^(?:i\s+(?:just\s+)?(?:wanted to|wanna|was wondering|was thinking|have a question|had a question)\s+(?:about|if|why|how|what)?[\s,:]*)',
+        r'^(?:my question (?:is|for you guys is)[\s,:]*)',
+        r'^(?:can (?:i ask|you tell me|someone explain)[\s,:]*)',
+    ]
+    for pat in preambles:
+        text = re.sub(pat, '', text, flags=re.IGNORECASE).strip()
+
+    return text
+
 @app.post("/api/interrupt")
 async def handle_human_interruption(
     file: Optional[UploadFile] = File(None),
@@ -472,12 +496,13 @@ async def handle_human_interruption(
         else:
             interruption_text = ""
 
-        interruption_text = interruption_text.strip()
-        if not interruption_text or len(interruption_text) < 2:
+        # Filter out random fluff and isolate core question
+        interruption_text = extract_core_question(interruption_text)
+        if not interruption_text or len(interruption_text) < 3:
             return {
                 "status": "silence",
-                "interruption": interruption_text,
-                "message": "No speech detected",
+                "interruption": "",
+                "message": "Ambient noise filtered",
                 "response": None
             }
 

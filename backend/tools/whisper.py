@@ -23,6 +23,12 @@ DEFAULT_SERVER_URL = os.getenv("WHISPER_SERVER_URL", "http://127.0.0.1:8080/infe
 KNOWN_HALLUCINATIONS = {
     "thank you for watching",
     "thanks for watching",
+    "thank you for listening",
+    "thanks for listening",
+    "thank you very much",
+    "thank you guys",
+    "thank you",
+    "thanks",
     "please subscribe",
     "subscribe for more",
     "like and subscribe",
@@ -46,7 +52,8 @@ KNOWN_HALLUCINATIONS = {
     "ok",
     "hmm",
     "shh",
-    "peace"
+    "peace",
+    "cheers"
 }
 
 def clean_whisper_text(raw_text: str) -> str:
