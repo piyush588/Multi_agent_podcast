@@ -506,11 +506,21 @@ async def handle_human_interruption(
         coordinator.record_message(a2a_interrupt_msg)
         PODCAST_STATE["a2a_traces"].append(a2a_interrupt_msg.to_dict())
 
-        # 2. Broadcast Interruption Event (< 20ms cutoff for active audio)
+        # 2. Instant Persona Acoustic Reaction Hook (< 15ms)
+        filler_file = Path(__file__).resolve().parent.parent / "audio_cache" / "fillers" / f"{persona.agent_id}_thinking.mp3"
+        filler_base64 = ""
+        if filler_file.exists():
+            import base64
+            try:
+                filler_base64 = base64.b64encode(filler_file.read_bytes()).decode("utf-8")
+            except Exception:
+                pass
+
         await broadcast_event("human_interruption", {
             "text": interruption_text,
             "routed_to": persona.name,
-            "agent_id": persona.agent_id
+            "agent_id": persona.agent_id,
+            "filler_audio": filler_base64
         })
         await broadcast_event("a2a_trace", a2a_interrupt_msg.to_dict())
 

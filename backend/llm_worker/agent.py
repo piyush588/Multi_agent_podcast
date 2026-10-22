@@ -153,43 +153,42 @@ async def generate_agent_response(
 
     messages.append({"role": "user", "content": role_instruction})
 
-    # Execute with llama3.2:3b via local Ollama
-    for model_name in ["llama3.2:3b", "llama3.2:1b"]:
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=1.2)) as client:
-                resp = await client.post(
-                    "http://127.0.0.1:11434/api/chat",
-                    json={
-                        "model": model_name,
-                        "messages": messages,
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.72 if user_interruption else 0.76,
-                            "top_p": 0.9,
-                            "repeat_penalty": 1.25,
-                            "presence_penalty": 0.5,
-                            "frequency_penalty": 0.3,
-                            "num_predict": 180,
-                            "stop": [
-                                "\nSarah:", "\nCharlie:", "\nRoger:",
-                                "\nSarah -", "\nCharlie -", "\nRoger -",
-                                "\nHost:", "\nTechnologist:", "\nEthicist:",
-                                "\nSarah (", "\nCharlie (", "\nRoger (",
-                                "\n[Sarah", "\n[Charlie", "\n[Roger",
-                                "\nAudience:", "\nCaller:", "\nUser:"
-                            ]
-                        }
+    # Execute with local llama3.2:3b via Ollama (locked to 3b to avoid VRAM swapping)
+    model_name = "llama3.2:3b"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=1.2)) as client:
+            resp = await client.post(
+                "http://127.0.0.1:11434/api/chat",
+                json={
+                    "model": model_name,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.72 if user_interruption else 0.76,
+                        "top_p": 0.9,
+                        "repeat_penalty": 1.25,
+                        "presence_penalty": 0.5,
+                        "frequency_penalty": 0.3,
+                        "num_predict": 85 if user_interruption else 80,
+                        "stop": [
+                            "\nSarah:", "\nCharlie:", "\nRoger:",
+                            "\nSarah -", "\nCharlie -", "\nRoger -",
+                            "\nHost:", "\nTechnologist:", "\nEthicist:",
+                            "\nSarah (", "\nCharlie (", "\nRoger (",
+                            "\n[Sarah", "\n[Charlie", "\n[Roger",
+                            "\nAudience:", "\nCaller:", "\nUser:"
+                        ]
                     }
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    raw_content = data.get("message", {}).get("content", "").strip()
-                    cleaned = clean_speech_text(raw_content, persona.name)
-                    if cleaned and len(cleaned) > 15:
-                        return cleaned
-        except Exception as e:
-            print(f"Ollama error on {model_name}: {repr(e)}")
-            continue
+                }
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_content = data.get("message", {}).get("content", "").strip()
+                cleaned = clean_speech_text(raw_content, persona.name)
+                if cleaned and len(cleaned) > 15:
+                    return cleaned
+    except Exception as e:
+        print(f"Ollama error on {model_name}: {repr(e)}")
 
     # Fallback if Ollama timeout
     if user_interruption:

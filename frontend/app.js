@@ -277,7 +277,17 @@ function handleServerEvent(event) {
       clearTimeout(nextTurnTimer);
       nextTurnTimer = null;
     }
-    setOrbState("listening", null);
+    // Play instant acoustic reaction hook if available (< 20ms response time)
+    if (data.filler_audio) {
+      setOrbState("talking", data.agent_id);
+      playAudioBase64(data.filler_audio, () => {
+        if (isProcessingTurn) {
+          setOrbState("thinking", data.agent_id);
+        }
+      });
+    } else {
+      setOrbState("thinking", data.agent_id || "host");
+    }
 
     // Keep dropdown on "all" so debate auto-rotation continues naturally!
     if (interruptTarget) {
