@@ -131,7 +131,7 @@ async def generate_agent_response(
     # Execute with llama3.2:3b via local Ollama
     for model_name in ["llama3.2:3b", "llama3.2:1b"]:
         try:
-            async with httpx.AsyncClient(timeout=35.0) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=1.2)) as client:
                 resp = await client.post(
                     "http://127.0.0.1:11434/api/chat",
                     json={

@@ -1,7 +1,12 @@
 import os
+import sys
 import asyncio
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+# Ensure backend root is on sys.path for local module imports
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse

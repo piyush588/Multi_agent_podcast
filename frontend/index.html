@@ -13,10 +13,10 @@
   <!-- ElevenLabs Minimal Topbar Navigation -->
   <header class="topbar">
     <div class="topbar-left">
-      <div class="logo">
+      <div class="logo" title="ElevenLabs AI Roundtable">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-          <rect x="7" y="4" width="3" height="16" rx="1.5" fill="#FFFFFF"/>
-          <rect x="14" y="4" width="3" height="16" rx="1.5" fill="#FFFFFF"/>
+          <rect x="7" y="4" width="3.2" height="16" rx="1.6" fill="currentColor"/>
+          <rect x="14" y="4" width="3.2" height="16" rx="1.6" fill="currentColor"/>
         </svg>
       </div>
       <div class="studio-title-group">
@@ -47,27 +47,27 @@
     <!-- Column 1 (Left): Active Speaker Orb & The 3 Roundtable Panelists -->
     <div class="grid-col col-1">
       
-      <!-- Card 1: Signature ElevenLabs Flower Petal Orb -->
+      <!-- Card 1: Signature ElevenLabs Particle Voice Sphere -->
       <div class="el-card orb-card">
         <div class="card-title-bar">
           <div>
-            <div class="card-title">Active Speaker Orb</div>
-            <div class="card-subtitle">Real-time voice state visualization</div>
+            <div class="card-title">Voice Visualizer</div>
+            <div class="card-subtitle">ElevenLabs fluid particle sphere</div>
           </div>
           <span class="badge-tag" id="current-active-tag">IDLE</span>
         </div>
 
         <div class="orb-container">
-          <div class="eleven-orb" id="main-orb">
-            <div class="orb-inner">
-              <div class="petal p1"></div>
-              <div class="petal p2"></div>
-              <div class="petal p3"></div>
-              <div class="petal p4"></div>
-            </div>
-            <div class="orb-glow"></div>
+          <div class="particle-orb-wrapper" id="particle-orb-wrapper">
+            <canvas id="particle-orb-canvas" width="220" height="220" title="Interactive Particle Voice Sphere • Click to pulse"></canvas>
+            <!-- Hidden legacy div preserving any main-orb query references -->
+            <div class="eleven-orb" id="main-orb" style="display: none;"></div>
           </div>
           <div class="orb-meta">
+            <div class="orb-speaker-pill" id="orb-speaker-pill">
+              <span class="pulse-dot"></span>
+              <span id="orb-speaker-badge">Autonomous Host</span>
+            </div>
             <h3 id="orb-speaker-name">AI Roundtable</h3>
             <p id="orb-speaker-role">Ready to Broadcast</p>
           </div>
@@ -107,48 +107,48 @@
 
         <div class="panelist-list">
           <!-- Sarah -->
-          <div class="panelist-item" id="panelist-host">
+          <div class="panelist-item" id="panelist-host" title="Direct question to Sarah">
             <div class="panelist-avatar host-bg">
               <span>S</span>
             </div>
             <div class="panelist-info">
               <div class="panelist-name-row">
                 <span class="panelist-name">Sarah</span>
-                <span class="voice-badge">Rachel (ElevenLabs)</span>
+                <span class="voice-badge">Rachel • Flash</span>
               </div>
-              <span class="panelist-role">Host, Moderator & Fact-Checker</span>
+              <span class="panelist-role">Host & Synthesizer</span>
             </div>
-            <div class="speaking-indicator"></div>
+            <div class="speaking-indicator"><span></span><span></span><span></span></div>
           </div>
 
           <!-- Charlie -->
-          <div class="panelist-item" id="panelist-technologist">
+          <div class="panelist-item" id="panelist-technologist" title="Direct question to Charlie">
             <div class="panelist-avatar tech-bg">
               <span>C</span>
             </div>
             <div class="panelist-info">
               <div class="panelist-name-row">
                 <span class="panelist-name">Charlie</span>
-                <span class="voice-badge">Charlie (ElevenLabs)</span>
+                <span class="voice-badge">Charlie • Flash</span>
               </div>
-              <span class="panelist-role">Open-Weights Accelerationist Hacker</span>
+              <span class="panelist-role">AI Accelerationist Hacker</span>
             </div>
-            <div class="speaking-indicator"></div>
+            <div class="speaking-indicator"><span></span><span></span><span></span></div>
           </div>
 
           <!-- Roger -->
-          <div class="panelist-item" id="panelist-ethicist">
+          <div class="panelist-item" id="panelist-ethicist" title="Direct question to Roger">
             <div class="panelist-avatar ethic-bg">
               <span>R</span>
             </div>
             <div class="panelist-info">
               <div class="panelist-name-row">
                 <span class="panelist-name">Roger</span>
-                <span class="voice-badge">Roger (ElevenLabs)</span>
+                <span class="voice-badge">Roger • Flash</span>
               </div>
-              <span class="panelist-role">AI Safety & Governance Scholar</span>
+              <span class="panelist-role">AI Safety & Governance</span>
             </div>
-            <div class="speaking-indicator"></div>
+            <div class="speaking-indicator"><span></span><span></span><span></span></div>
           </div>
         </div>
       </div>
@@ -248,9 +248,19 @@
           </div>
         </div>
 
-        <!-- Message Feed (ElevenLabs Dark & White Capsules) -->
+        <!-- Message Feed (ElevenLabs Capsules) -->
         <div class="chat-messages" id="transcript-feed">
-          <!-- Dynamic turns populate here -->
+          <div class="chat-empty-state" id="chat-empty-state">
+            <div class="empty-glyph">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+              </svg>
+            </div>
+            <h4>Studio Standby — 3 AI Personas Ready</h4>
+            <p>Click <strong>Start Autonomous Roundtable</strong> to begin the debate, or speak aloud anytime to interrupt Sarah, Charlie, or Roger.</p>
+          </div>
         </div>
 
         <!-- Floating Scroll Down Arrow -->
@@ -321,15 +331,16 @@
         </div>
 
         <div class="telemetry-wave-box" id="telemetry-box">
-          <div class="wave-lines-full">
+          <canvas id="telemetry-canvas" width="260" height="56"></canvas>
+          <div class="wave-lines-full" style="display: none;">
             <span class="t-line"></span><span class="t-line"></span><span class="t-line"></span><span class="t-line"></span>
             <span class="t-line"></span><span class="t-line"></span><span class="t-line"></span><span class="t-line"></span>
             <span class="t-line"></span><span class="t-line"></span><span class="t-line"></span><span class="t-line"></span>
             <span class="t-line"></span><span class="t-line"></span><span class="t-line"></span><span class="t-line"></span>
           </div>
           <div class="wave-stat-row">
-            <span>Sample Rate: 16 kHz Mono</span>
-            <span class="text-emerald">whisper.cpp (Metal)</span>
+            <span>Audio: 44.1 kHz • Float32</span>
+            <span class="text-emerald">ElevenLabs Flash v2.5</span>
           </div>
         </div>
       </div>
@@ -383,6 +394,7 @@
   </main>
 
   <audio id="audio-player" style="display: none;"></audio>
+  <script src="/static/orb.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

@@ -20,6 +20,7 @@ const topicPresetsList = document.getElementById("topic-presets-list");
 const mainOrb = document.getElementById("main-orb");
 const orbSpeakerName = document.getElementById("orb-speaker-name");
 const orbSpeakerRole = document.getElementById("orb-speaker-role");
+const orbSpeakerBadge = document.getElementById("orb-speaker-badge");
 const currentActiveTag = document.getElementById("current-active-tag");
 const pillIdle = document.getElementById("pill-idle");
 const pillListening = document.getElementById("pill-listening");
@@ -29,6 +30,105 @@ const telemetryBox = document.getElementById("telemetry-box");
 const playbackProgress = document.getElementById("playback-progress");
 const currentTimeEl = document.getElementById("current-time");
 const speakerStatusCaption = document.getElementById("speaker-status-caption");
+const themeBtn = document.getElementById("theme-btn");
+
+// Instantiate ElevenLabs Interactive Particle Voice Sphere
+let particleSphere = null;
+if (window.ElevenLabsParticleSphere) {
+  particleSphere = new window.ElevenLabsParticleSphere("particle-orb-canvas");
+  window.particleSphere = particleSphere;
+}
+
+// Telemetry Canvas Spectrum Visualizer
+const telemetryCanvas = document.getElementById("telemetry-canvas");
+const telemetryCtx = telemetryCanvas ? telemetryCanvas.getContext("2d") : null;
+
+function renderTelemetryWave() {
+  if (!telemetryCtx || !telemetryCanvas) return;
+  const w = telemetryCanvas.width;
+  const h = telemetryCanvas.height;
+  telemetryCtx.clearRect(0, 0, w, h);
+
+  const numBars = 32;
+  const barWidth = (w / numBars) - 2;
+  const isSpeaking = (particleSphere && (particleSphere.state === "talking" || particleSphere.state === "listening"));
+  const energy = particleSphere ? particleSphere.energy : 0.05;
+  const now = Date.now() * 0.005;
+
+  for (let i = 0; i < numBars; i++) {
+    const x = i * (barWidth + 2);
+    let barHeight = 4;
+    if (isSpeaking) {
+      const wave = Math.sin(now * 2 + i * 0.35) * 0.5 + 0.5;
+      const freq = Math.sin(now * 3.8 + i * 0.7) * 0.3 + 0.7;
+      barHeight = Math.max(4, Math.min(h - 4, (wave * freq * energy * 1.8) * (h - 8)));
+    } else {
+      barHeight = 4 + Math.sin(now + i * 0.25) * 2;
+    }
+
+    const y = h - barHeight;
+    const isDark = document.body.getAttribute("data-theme") === "dark";
+    const grad = telemetryCtx.createLinearGradient(0, y, 0, h);
+    if (isSpeaking) {
+      grad.addColorStop(0, "#FF6B4A");
+      grad.addColorStop(1, "#F59E0B");
+    } else {
+      grad.addColorStop(0, isDark ? "#353B4E" : "#D0C6B5");
+      grad.addColorStop(1, isDark ? "#1D212B" : "#E4DDD1");
+    }
+
+    telemetryCtx.fillStyle = grad;
+    telemetryCtx.beginPath();
+    telemetryCtx.roundRect(x, y, barWidth, barHeight, [2, 2, 0, 0]);
+    telemetryCtx.fill();
+  }
+
+  requestAnimationFrame(renderTelemetryWave);
+}
+renderTelemetryWave();
+
+// Theme Switcher (Signature Whitish Skin-Tone Default | Obsidian Option)
+function initTheme() {
+  const savedTheme = localStorage.getItem("elevenlabs_roundtable_theme") || "light";
+  applyTheme(savedTheme);
+
+  if (themeBtn) {
+    themeBtn.addEventListener("click", () => {
+      const current = document.body.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      const next = current === "dark" ? "light" : "dark";
+      applyTheme(next);
+      localStorage.setItem("elevenlabs_roundtable_theme", next);
+    });
+  }
+}
+
+function applyTheme(theme) {
+  if (theme === "dark") {
+    document.body.setAttribute("data-theme", "dark");
+    if (themeBtn) {
+      themeBtn.title = "Switch to Alabaster Light Theme";
+      themeBtn.innerHTML = `
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+      `;
+    }
+  } else {
+    document.body.removeAttribute("data-theme");
+    if (themeBtn) {
+      themeBtn.title = "Switch to Obsidian Dark Theme";
+      themeBtn.innerHTML = `
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+      `;
+    }
+  }
+}
+initTheme();
 
 // Panelist Roster Elements
 const panelistHost = document.getElementById("panelist-host");
@@ -155,8 +255,22 @@ function handleServerEvent(event) {
 }
 
 function clearChatUI() {
-  if (transcriptFeed) transcriptFeed.innerHTML = "";
-  if (a2aStream) a2aStream.innerHTML = "";
+  if (transcriptFeed) {
+    transcriptFeed.innerHTML = `
+      <div class="chat-empty-state" id="chat-empty-state">
+        <div class="empty-glyph">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+          </svg>
+        </div>
+        <h4>Studio Standby — 3 AI Personas Ready</h4>
+        <p>Click <strong>Start Autonomous Roundtable</strong> to begin the debate, or speak aloud anytime to interrupt Sarah, Charlie, or Roger.</p>
+      </div>
+    `;
+  }
+  if (a2aStream) a2aStream.innerHTML = '<div class="a2a-empty">A2A message frames will appear here during active dialogue.</div>';
   if (turnCountEl) turnCountEl.textContent = "0 Turns";
   lastProcessedTurnContent = "";
   isAudioPlaying = false;
@@ -277,19 +391,24 @@ function setOrbState(state, agentId) {
   [pillIdle, pillListening, pillTalking].forEach(p => p && p.classList.remove("active"));
   [panelistHost, panelistTech, panelistEthic].forEach(el => el && el.classList.remove("active-speaking"));
 
+  if (window.particleSphere) {
+    window.particleSphere.setState(state, agentId);
+  }
+
   if (state === "talking") {
     if (pillTalking) pillTalking.classList.add("active");
     if (currentActiveTag) {
       currentActiveTag.textContent = "TALKING";
-      currentActiveTag.style.color = "#60A5FA";
+      currentActiveTag.style.color = "#FF6B4A";
     }
     if (mainOrb) mainOrb.classList.add("talking");
     if (waveformBars) waveformBars.classList.add("active");
     if (telemetryBox) telemetryBox.classList.add("active");
 
-    const agent = AGENTS[agentId] || { name: "Agent", role: "Speaking" };
+    const agent = AGENTS[agentId] || { name: "Sarah", role: "Host & Moderator", voice: "Rachel" };
     if (orbSpeakerName) orbSpeakerName.textContent = agent.name;
     if (orbSpeakerRole) orbSpeakerRole.textContent = agent.role;
+    if (orbSpeakerBadge) orbSpeakerBadge.textContent = `${agent.name} (Active Speaker)`;
     if (speakerStatusCaption) speakerStatusCaption.textContent = `${agent.name} Speaking`;
 
     if (agentId === "host" && panelistHost) panelistHost.classList.add("active-speaking");
@@ -309,6 +428,7 @@ function setOrbState(state, agentId) {
     const agent = AGENTS[agentId] || { name: "Agent", role: "Synthesizing" };
     if (orbSpeakerName) orbSpeakerName.textContent = agent.name;
     if (orbSpeakerRole) orbSpeakerRole.textContent = "Formulating response...";
+    if (orbSpeakerBadge) orbSpeakerBadge.textContent = `${agent.name} Reasoning...`;
     if (speakerStatusCaption) speakerStatusCaption.textContent = `${agent.name} Reasoning...`;
 
   } else if (state === "listening") {
@@ -322,6 +442,7 @@ function setOrbState(state, agentId) {
     if (telemetryBox) telemetryBox.classList.add("active");
     if (orbSpeakerName) orbSpeakerName.textContent = "Audience";
     if (orbSpeakerRole) orbSpeakerRole.textContent = "Listening to your voice...";
+    if (orbSpeakerBadge) orbSpeakerBadge.textContent = "Human Barge-In Active";
     if (speakerStatusCaption) speakerStatusCaption.textContent = "User Speaking";
 
   } else {
@@ -329,11 +450,12 @@ function setOrbState(state, agentId) {
     if (pillIdle) pillIdle.classList.add("active");
     if (currentActiveTag) {
       currentActiveTag.textContent = "IDLE";
-      currentActiveTag.style.color = "#8E95A2";
+      currentActiveTag.style.color = "#968F85";
     }
     if (mainOrb) mainOrb.classList.remove("talking");
     if (waveformBars) waveformBars.classList.remove("active");
     if (telemetryBox) telemetryBox.classList.remove("active");
+    if (orbSpeakerBadge) orbSpeakerBadge.textContent = "Studio Ready";
     if (speakerStatusCaption) {
       speakerStatusCaption.textContent = isRunning ? "Waiting for turn" : "Studio Ready";
     }
@@ -345,6 +467,9 @@ function setOrbState(state, agentId) {
 // ============================================================================
 function appendTranscript(turn) {
   if (!transcriptFeed || !turn || !turn.content) return;
+
+  const emptyState = transcriptFeed.querySelector("#chat-empty-state");
+  if (emptyState) emptyState.remove();
 
   // Prevent duplicate rendering of identical text
   const cleanContent = turn.content.trim();
@@ -360,21 +485,47 @@ function appendTranscript(turn) {
 
   if (turn.isInterruption || turn.sender?.includes("Audience")) {
     bubble.className = "msg-bubble user-msg";
-    bubble.textContent = turn.content;
-  } else {
-    bubble.className = "msg-bubble agent-msg";
     bubble.innerHTML = `
-      <div class="agent-avatar">
-        <div class="mini-orb-glyph"></div>
+      <div style="font-size: 10.5px; opacity: 0.8; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Audience Interruption</div>
+      <div>${turn.content}</div>
+    `;
+  } else {
+    const agentKey = (turn.agent_id || "").toLowerCase();
+    let borderColor = "#FF8A65";
+    let avatarGradient = "linear-gradient(135deg, #FF8A65, #FF5A36)";
+    if (agentKey.includes("tech") || turn.sender?.includes("Charlie")) {
+      borderColor = "#F59E0B";
+      avatarGradient = "linear-gradient(135deg, #FBBF24, #F59E0B)";
+    } else if (agentKey.includes("ethic") || turn.sender?.includes("Roger")) {
+      borderColor = "#3B82F6";
+      avatarGradient = "linear-gradient(135deg, #60A5FA, #2563EB)";
+    }
+
+    bubble.className = "msg-bubble agent-msg";
+    bubble.style.borderLeftColor = borderColor;
+    bubble.innerHTML = `
+      <div class="agent-avatar" style="background: ${avatarGradient};">
+        <span style="color: #FFF; font-size: 11px; font-weight: 700;">${(turn.sender || "A")[0]}</span>
       </div>
       <div class="agent-content-box">
         <div class="agent-meta-header">
           <span class="agent-speaker-name">${turn.sender}</span>
           <span class="agent-speaker-role">${turn.role || ""}</span>
+          ${turn.audio_base64 ? `<button class="audio-replay-btn" title="Replay voice audio" style="margin-left: auto; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 9999px; padding: 2.5px 8px; font-size: 10px; cursor: pointer; display: flex; align-items: center; gap: 4px; color: var(--text-secondary);"><svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Replay</button>` : ''}
         </div>
         <div class="agent-text">${turn.content}</div>
       </div>
     `;
+
+    const replayBtn = bubble.querySelector(".audio-replay-btn");
+    if (replayBtn && turn.audio_base64) {
+      replayBtn.addEventListener("click", () => {
+        setOrbState("talking", turn.agent_id || "host");
+        playAudioBase64(turn.audio_base64, () => {
+          setOrbState("idle", null);
+        });
+      });
+    }
   }
 
   transcriptFeed.appendChild(bubble);
@@ -897,6 +1048,7 @@ async function ensureMicStreamInitialized() {
       const displayPercent = Math.min(100, Math.max(0, Math.round(rms * 400)));
       if (micMeterFill) micMeterFill.style.width = `${displayPercent}%`;
       if (micEnergyText) micEnergyText.textContent = `${displayPercent}%`;
+      if (window.particleSphere) window.particleSphere.setAudioEnergy(rms);
 
       // Hands-Free Auto-VAD Voice Triggering
       if (micInputMode === "auto-vad" && !isManualRecording && !isInterruptionInFlight) {

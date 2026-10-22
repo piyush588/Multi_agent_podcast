@@ -137,12 +137,18 @@ async def call_whisper(audio_bytes: bytes) -> str:
         # Filtered out as background noise or silence
         return ""
 
-    async with httpx.AsyncClient() as client:
-        files = {"file": ("audio.wav", wav_16k, "audio/wav")}
-        resp = await client.post(DEFAULT_SERVER_URL, files=files, timeout=30)
-        resp.raise_for_status()
-        result = resp.json()
-        raw_text = result.get("text", "").strip()
-        return clean_whisper_text(raw_text)
+    try:
+        async with httpx.AsyncClient() as client:
+            files = {"file": ("audio.wav", wav_16k, "audio/wav")}
+            resp = await client.post(DEFAULT_SERVER_URL, files=files, timeout=30)
+            if resp.status_code != 200:
+                print(f"Whisper server notice: {resp.status_code} {resp.text}")
+                return ""
+            result = resp.json()
+            raw_text = result.get("text", "").strip()
+            return clean_whisper_text(raw_text)
+    except Exception as e:
+        print(f"Whisper inference notice: {e}")
+        return ""
 
 
