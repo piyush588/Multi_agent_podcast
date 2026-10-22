@@ -336,16 +336,16 @@ function clearChatUI() {
 let precomputedTurn = null;
 let isPrefetching = false;
 
-async function prefetchNextTurn() {
-  if (!isRunning || isPrefetching || precomputedTurn || isInterruptionInFlight) return;
+async function prefetchNextTurn(force = false) {
+  if ((!isRunning && !force) || isPrefetching || precomputedTurn || isInterruptionInFlight) return;
   isPrefetching = true;
   try {
     const res = await fetch(`${API_BASE}/api/turn/prefetch`, { method: "POST" });
     if (res.ok) {
       const data = await res.json();
-      if (data && data.turn && isRunning && !isInterruptionInFlight) {
+      if (data && data.turn && !isInterruptionInFlight) {
         precomputedTurn = data.turn;
-        console.log("⚡ Look-ahead pre-fetched next speaker ready:", precomputedTurn.sender);
+        console.log("⚡ Look-ahead pre-fetched speaker ready:", precomputedTurn.sender);
       }
     }
   } catch (e) {
@@ -733,8 +733,23 @@ async function toggleAutonomousDebate() {
         </svg>
       `;
     }
-    await startLiveHandsFreeListening();
-    triggerNextTurn();
+    startLiveHandsFreeListening();
+
+    // Instant Start (< 30ms): Play pre-fetched opening turn immediately if ready!
+    if (precomputedTurn) {
+      const turnToPlay = precomputedTurn;
+      precomputedTurn = null;
+      try {
+        fetch(`${API_BASE}/api/turn/commit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ turn: turnToPlay })
+        });
+      } catch (e) {}
+      handleTurnPayload(turnToPlay);
+    } else {
+      triggerNextTurn();
+    }
   } else {
     if (startBtn) startBtn.classList.remove("running");
     if (startBtnText) startBtnText.textContent = "Start Autonomous Roundtable";
@@ -1426,6 +1441,9 @@ if (panelistEthic) panelistEthic.addEventListener("click", () => { if (interrupt
 connectWebSocket();
 loadTopicPresets();
 fetch(`${API_BASE}/api/state`).then(r => r.json()).then(syncState);
+
+// Pre-fetch opening turn on startup for instant zero-lag start (< 20ms)
+setTimeout(() => prefetchNextTurn(true), 600);
 
 // Auto-activate hands-free listening on first user interaction anywhere in studio
 document.addEventListener("click", () => {
