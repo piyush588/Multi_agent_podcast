@@ -61,6 +61,21 @@ def clean_speech_text(text: str, persona_name: str) -> str:
     text = ensure_complete_sentences(text)
     return text
 
+def extract_speaker_first_name(raw_name: str) -> str:
+    """Extracts clean persona name (Sarah, Charlie, Roger, or the listener)."""
+    if not raw_name:
+        return "everyone"
+    lower = raw_name.lower()
+    if "sarah" in lower:
+        return "Sarah"
+    if "charlie" in lower:
+        return "Charlie"
+    if "roger" in lower:
+        return "Roger"
+    if any(k in lower for k in ["audience", "listener", "caller", "human"]):
+        return "the listener"
+    return raw_name.split()[0]
+
 async def generate_agent_response(
     persona: Persona,
     history: List[Dict[str, str]],
@@ -73,6 +88,7 @@ async def generate_agent_response(
     last_turn = history[-1] if history else {}
     last_speaker = last_turn.get("sender", "")
     last_argument = last_turn.get("content", "")
+    target_name = extract_speaker_first_name(last_speaker)
 
     bg = battleground or {}
     dimension = bg.get("dimension", "Core Debate")
@@ -96,8 +112,10 @@ async def generate_agent_response(
         if last_speaker and last_argument:
             role_instruction = (
                 f"DEBATE TOPIC: '{topic}'. DIMENSION: '{dimension}'.\n"
-                f"{last_speaker} just argued: \"{last_argument}\".\n"
-                f"You are Sarah (Host). React with authentic podcast energy (e.g. 'Haha, shots fired!', 'Hold on a second, Charlie.', 'Heh, that sounds great, but let's get real.').\n"
+                f"WHO JUST SPOKE: {last_speaker}.\n"
+                f"{last_speaker} argued: \"{last_argument}\".\n"
+                f"You are Sarah (Host & Executive Moderator).\n"
+                f"CRITICAL AWARENESS: React directly to what {target_name} just said (e.g. 'Haha, shots fired from {target_name}!', 'Hold on a second, {target_name}.', 'Okay {target_name}, let us test that claim.').\n"
                 f"Confront the panel with the hard dilemma: \"{sarah_target}\".\n"
                 "Speak in 2 punchy, spoken sentences ending with a sharp question."
             )
@@ -109,19 +127,23 @@ async def generate_agent_response(
     elif persona.agent_id == "technologist":
         role_instruction = (
             f"DEBATE TOPIC: '{topic}'. DIMENSION: '{dimension}'.\n"
+            f"WHO JUST SPOKE: {last_speaker}.\n"
+            f"{last_speaker} argued/asked: \"{last_argument}\".\n"
+            f"You are Charlie (Pragmatic Builder & Systems Hacker).\n"
             f"Your stance: \"{charlie_target}\".\n"
-            f"{last_speaker} argued: \"{last_argument}\".\n"
-            f"You are Charlie (AI Hacker). React spontaneously with authentic conviction (e.g. 'Haha, come on, Roger!', 'Heh, you're kidding, right?', 'Look, let's talk about the actual reality.').\n"
-            f"Dismantle {last_speaker}'s argument with a concrete, real-world example on '{topic}'.\n"
+            f"CRITICAL AWARENESS: You are responding directly to {target_name}! Address {target_name} by name (e.g. 'Haha, come on, {target_name}!', 'Look {target_name}, let us talk about actual reality.'). NEVER call {target_name} by someone else's name!\n"
+            f"Dismantle {target_name}'s point with a concrete, real-world example on '{topic}'.\n"
             "Keep it 2 to 3 fiery, conversational sentences. Use everyday spoken English, not academic prose."
         )
     else:  # ethicist
         role_instruction = (
             f"DEBATE TOPIC: '{topic}'. DIMENSION: '{dimension}'.\n"
+            f"WHO JUST SPOKE: {last_speaker}.\n"
+            f"{last_speaker} argued/asked: \"{last_argument}\".\n"
+            f"You are Roger (Tech Analyst & Consumer Advocate).\n"
             f"Your stance: \"{roger_target}\".\n"
-            f"{last_speaker} argued: \"{last_argument}\".\n"
-            f"You are Roger (Ethicist). Push back hard against {last_speaker}'s Silicon Valley optimism (e.g. 'Hmm, that's easy to say from an air-conditioned office, Charlie.', 'Haha, sure, until someone gets hurt.', 'Look at who actually pays the price here.').\n"
-            f"Highlight the real-world human victim or danger on '{topic}'.\n"
+            f"CRITICAL AWARENESS: You are responding directly to {target_name}! Address {target_name} by name (e.g. 'Hmm, {target_name}, that is easy to say, but...', 'Look at the actual human impact, {target_name}.'). NEVER call {target_name} by someone else's name!\n"
+            f"Highlight the real-world human victim, hidden cost, or security danger on '{topic}'.\n"
             "Keep it 2 to 3 grounded, passionate spoken sentences."
         )
 
@@ -129,11 +151,16 @@ async def generate_agent_response(
     system_prompt = (
         f"{persona.system_prompt}\n\n"
         "STRICT PODCAST BROADCAST RULES:\n"
-        "1. SPEAK LIKE REAL HUMANS ON A LIVE SHOW: Talk like hosts on Joe Rogan or the All-In Podcast. Use contractions (it's, that's, we've, don't), visceral spoken reactions ('Haha, look...', 'Heh, come on...', 'Hmm...'), and natural rhythm.\n"
-        "2. BANNED ACADEMIC JARGON: NEVER use 'conflate', 'inherent', 'secrecy-laden', 'untestable paradox', 'systemic accountability', 'monopolistic structures', 'mitigate', 'digital landscape', 'delve', 'tapestry', 'dichotomy', 'multifaceted', 'paradigm', 'nuanced'. Speak plain, powerful English!\n"
-        "3. STAY SHARP AND OPINIONATED: Anchor directly to the debate topic without drifting into generic software coding tropes.\n"
-        "4. Keep your answer to 2 to 3 punchy, complete spoken sentences ending with a period or question mark.\n"
-        "5. Output ONLY spoken words. Never output speaker prefixes (e.g. 'Sarah:'), stage directions in brackets, or asterisks (*laughs*). Use written words like 'Haha,' or 'Heh,' so ElevenLabs laughs naturally."
+        "1. STUDIO ROSTER & MUTUAL AWARENESS:\n"
+        "   - Sarah: Podcast Host & Executive Moderator (directs questions, moderates clash).\n"
+        "   - Charlie: Pragmatic Builder & Systems Hacker (champions open architectures, hardware freedom, performance).\n"
+        "   - Roger: Tech Analyst & Consumer Advocate (champions safety, privacy, consumer rights, systemic buffers).\n"
+        f"   - ALWAYS PAY ATTENTION TO WHO JUST SPOKE ({target_name}). Never confuse Sarah with Roger, or Charlie with Sarah!\n"
+        "2. SPEAK LIKE REAL HUMANS ON A LIVE SHOW: Talk like hosts on Joe Rogan or the All-In Podcast. Use contractions (it's, that's, we've, don't), visceral spoken reactions ('Haha, look...', 'Heh, come on...', 'Hmm...'), and natural rhythm.\n"
+        "3. BANNED ACADEMIC JARGON: NEVER use 'conflate', 'inherent', 'secrecy-laden', 'untestable paradox', 'systemic accountability', 'monopolistic structures', 'mitigate', 'digital landscape', 'delve', 'tapestry', 'dichotomy', 'multifaceted', 'paradigm', 'nuanced'. Speak plain, powerful English!\n"
+        "4. STAY SHARP AND OPINIONATED: Anchor directly to the debate topic without drifting into generic software coding tropes.\n"
+        "5. Keep your answer to 2 to 3 punchy, complete spoken sentences ending with a period or question mark.\n"
+        "6. Output ONLY spoken words. Never output speaker prefixes (e.g. 'Sarah:'), stage directions in brackets, or asterisks (*laughs*). Use written words like 'Haha,' or 'Heh,' so ElevenLabs laughs naturally."
         f"{novelty_directives}"
     )
 
