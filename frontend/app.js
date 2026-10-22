@@ -247,6 +247,7 @@ function connectWebSocket() {
 let isAudioPlaying = false;
 let nextTurnTimer = null;
 let lastProcessedTurnContent = "";
+let activePlaybackId = 0;
 
 function handleServerEvent(event) {
   const { type, data } = event;
@@ -257,7 +258,20 @@ function handleServerEvent(event) {
     setOrbState("thinking", data.agent_id);
     appendTranscript(data);
   } else if (type === "turn_completed") {
-    handleTurnPayload(data);
+    handleTurnPayload(data, Boolean(data.is_interruption_response));
+  } else if (type === "silence_speaker") {
+    activePlaybackId++;
+    if (audioPlayer) {
+      audioPlayer.pause();
+      audioPlayer.currentTime = 0;
+      audioPlayer.src = "";
+    }
+    isAudioPlaying = false;
+    precomputedTurn = null;
+    if (nextTurnTimer) {
+      clearTimeout(nextTurnTimer);
+      nextTurnTimer = null;
+    }
   } else if (type === "a2a_trace") {
     appendA2ATrace(data);
   } else if (type === "history_cleared") {
@@ -266,12 +280,15 @@ function handleServerEvent(event) {
       currentTopicEl.textContent = data.topic;
     }
   } else if (type === "human_interruption") {
-    // Cut off current playing audio immediately (< 30ms)
+    // Cut off current playing audio immediately (< 10ms)
+    activePlaybackId++;
     if (audioPlayer) {
       audioPlayer.pause();
       audioPlayer.currentTime = 0;
+      audioPlayer.src = "";
     }
     isAudioPlaying = false;
+    precomputedTurn = null;
     isProcessingTurn = true; // Lock turn execution while interruption processes
     if (nextTurnTimer) {
       clearTimeout(nextTurnTimer);
@@ -368,8 +385,17 @@ async function prefetchNextTurn(force = false) {
   }
 }
 
-function handleTurnPayload(payload) {
+function handleTurnPayload(payload, isDirectInterruptionResponse = false) {
   if (!payload || !payload.content) return;
+  const isInterruptionResp = isDirectInterruptionResponse || Boolean(payload.is_interruption_response);
+
+  // If the user is actively speaking into mic or an interruption is in-flight,
+  // DROP any inbound autonomous/prefetched turns so they never talk over the user!
+  if (!isInterruptionResp && (isSpeakingDetected || isManualRecording || isInterruptionInFlight)) {
+    console.log("🛑 Discarded autonomous turn because user is actively interrupting");
+    return;
+  }
+
   const turnKey = payload.content.trim();
   if (lastProcessedTurnContent === turnKey) return; // Prevent double trigger
   lastProcessedTurnContent = turnKey;
@@ -390,7 +416,7 @@ function handleTurnPayload(payload) {
       isProcessingTurn = false;
       isAudioPlaying = false;
       isInterruptionInFlight = false;
-      if (isRunning) {
+      if (isRunning && !isSpeakingDetected && !isManualRecording && !isInterruptionInFlight) {
         // If look-ahead pre-fetched turn is ready, play immediately (200ms natural breath pause)!
         if (precomputedTurn) {
           const nextTurnToPlay = precomputedTurn;
@@ -413,7 +439,7 @@ function handleTurnPayload(payload) {
     });
 
     // Pipelined Look-Ahead: Kick off the NEXT speaker's answer in the background while this audio plays!
-    if (isRunning && !isInterruptionInFlight) {
+    if (isRunning && !isInterruptionInFlight && !isSpeakingDetected && !isManualRecording) {
       setTimeout(prefetchNextTurn, 500);
     }
   } else {
@@ -424,7 +450,7 @@ function handleTurnPayload(payload) {
       isProcessingTurn = false;
       isAudioPlaying = false;
       isInterruptionInFlight = false;
-      if (isRunning) {
+      if (isRunning && !isSpeakingDetected && !isManualRecording && !isInterruptionInFlight) {
         if (precomputedTurn) {
           const nextTurnToPlay = precomputedTurn;
           precomputedTurn = null;
@@ -437,8 +463,9 @@ function handleTurnPayload(payload) {
   }
 }
 
-// Play Audio with Full State Tracking
+// Play Audio with Full State Tracking & Interruption Cancellation Generation
 function playAudioBase64(base64Data, onEndCallback) {
+  const currentGen = ++activePlaybackId;
   try {
     const audioSrc = "data:audio/mpeg;base64," + base64Data;
     audioPlayer.src = audioSrc;
@@ -448,7 +475,10 @@ function playAudioBase64(base64Data, onEndCallback) {
       if (!endedCalled) {
         endedCalled = true;
         isAudioPlaying = false;
-        if (onEndCallback) onEndCallback();
+        // ONLY trigger onEndCallback if this audio was NOT superseded or interrupted!
+        if (currentGen === activePlaybackId && !isSpeakingDetected && !isManualRecording && !isInterruptionInFlight) {
+          if (onEndCallback) onEndCallback();
+        }
       }
     };
 
@@ -467,12 +497,22 @@ function playAudioBase64(base64Data, onEndCallback) {
     if (playPromise !== undefined) {
       playPromise
         .then(() => {
-          isAudioPlaying = true;
+          if (currentGen === activePlaybackId) {
+            isAudioPlaying = true;
+          } else {
+            // Already interrupted before play promise resolved
+            audioPlayer.pause();
+            audioPlayer.currentTime = 0;
+            audioPlayer.src = "";
+            isAudioPlaying = false;
+          }
         })
         .catch(e => {
           console.warn("Audio play gesture note:", e);
           isAudioPlaying = false;
-          setTimeout(callEndOnce, 2500);
+          if (currentGen === activePlaybackId) {
+            setTimeout(callEndOnce, 2500);
+          }
         });
     }
   } catch (err) {
@@ -704,7 +744,7 @@ async function syncState(state) {
 // 4. MASTER CONTROLS & AUTONOMOUS ROUNDTABLE
 // ============================================================================
 async function triggerNextTurn() {
-  if (isProcessingTurn) return;
+  if (isProcessingTurn || isSpeakingDetected || isManualRecording || isInterruptionInFlight) return;
   isProcessingTurn = true;
   if (nextTurnTimer) {
     clearTimeout(nextTurnTimer);
@@ -717,6 +757,12 @@ async function triggerNextTurn() {
 
     const res = await fetch(`${API_BASE}/api/turn/trigger`, { method: "POST" });
     const data = await res.json();
+    // Interruption Safety Check: Did user start speaking while LLM was reasoning?
+    if (isSpeakingDetected || isManualRecording || isInterruptionInFlight) {
+      console.log("🛑 Discarded turn output because user began speaking/interrupting");
+      isProcessingTurn = false;
+      return;
+    }
     if (data && data.turn) {
       handleTurnPayload({
         ...data.turn,
@@ -727,7 +773,9 @@ async function triggerNextTurn() {
     console.error("Turn trigger error:", err);
     isProcessingTurn = false;
     setOrbState("idle", null);
-    if (isRunning) nextTurnTimer = setTimeout(triggerNextTurn, 2500);
+    if (isRunning && !isSpeakingDetected && !isManualRecording && !isInterruptionInFlight) {
+      nextTurnTimer = setTimeout(triggerNextTurn, 2500);
+    }
   } finally {
     if (nextTurnBtn) nextTurnBtn.disabled = false;
   }
@@ -797,10 +845,12 @@ async function toggleAutonomousDebate() {
 // Dedicated Stop Speaking Action (Immediate Hard Mute / Silence)
 function stopSpeakingImmediately() {
   console.log("⏹️ Stop speaking action triggered");
-  // 1. Immediately cut all audio playback (< 5ms)
+  // 1. Immediately cut all audio playback (< 2ms)
+  activePlaybackId++;
   if (audioPlayer) {
     audioPlayer.pause();
     audioPlayer.currentTime = 0;
+    audioPlayer.src = "";
   }
   isAudioPlaying = false;
   isProcessingTurn = false;
@@ -854,13 +904,17 @@ async function sendInterruption() {
   interruptText.value = "";
   if (sendInterruptBtn) sendInterruptBtn.disabled = true;
 
-  // Immediately stop AI speaker on interruption
-  if (audioPlayer && !audioPlayer.paused) {
+  // Immediately stop AI speaker on interruption (< 2ms)
+  activePlaybackId++;
+  if (audioPlayer) {
     audioPlayer.pause();
     audioPlayer.currentTime = 0;
+    audioPlayer.src = "";
   }
   isAudioPlaying = false;
   isProcessingTurn = true;
+  isInterruptionInFlight = true;
+  precomputedTurn = null;
   if (nextTurnTimer) {
     clearTimeout(nextTurnTimer);
     nextTurnTimer = null;
@@ -876,13 +930,15 @@ async function sendInterruption() {
     if (data && data.response) {
       const turnPayload = {
         ...data.response,
-        audio_base64: data.audio_base64 || data.response?.audio_base64
+        audio_base64: data.audio_base64 || data.response?.audio_base64,
+        is_interruption_response: true
       };
-      handleTurnPayload(turnPayload);
+      handleTurnPayload(turnPayload, true);
     }
   } catch (err) {
     console.error("Interruption error:", err);
     isProcessingTurn = false;
+    isInterruptionInFlight = false;
   } finally {
     if (sendInterruptBtn) sendInterruptBtn.disabled = false;
   }
@@ -987,6 +1043,24 @@ function setupSpeechRecognizer() {
 
       const fullDisplay = (speechSessionText + " " + interimSpeechText).trim();
       if (fullDisplay) {
+        // BARGE-IN: Immediately silence any AI speech (< 5ms) when listener speaks words
+        if (audioPlayer && (!audioPlayer.paused || isAudioPlaying)) {
+          activePlaybackId++;
+          audioPlayer.pause();
+          audioPlayer.currentTime = 0;
+          audioPlayer.src = "";
+          isAudioPlaying = false;
+        }
+        precomputedTurn = null;
+        if (nextTurnTimer) {
+          clearTimeout(nextTurnTimer);
+          nextTurnTimer = null;
+        }
+
+        if (!isSpeakingDetected && !isManualRecording) {
+          startRecordingSession(false);
+        }
+
         liveRecognizedText = fullDisplay;
         if (interruptText) interruptText.value = fullDisplay;
         if (micStatusText) micStatusText.textContent = `🎙️ "${fullDisplay}"`;
@@ -1094,13 +1168,14 @@ function startRecordingSession(isManual = false) {
   isManualRecording = isManual;
   liveRecognizedText = "";
 
-  // Immediately mute/stop any actively speaking agent (< 20ms barge-in)
+  // Immediately mute/stop any actively speaking agent (< 2ms barge-in)
+  activePlaybackId++;
   if (audioPlayer) {
     audioPlayer.pause();
     audioPlayer.currentTime = 0;
+    audioPlayer.src = "";
   }
   isAudioPlaying = false;
-  isProcessingTurn = true;
   precomputedTurn = null; // Flush lookahead queue immediately
   if (nextTurnTimer) {
     clearTimeout(nextTurnTimer);
@@ -1358,11 +1433,12 @@ async function ensureMicStreamInitialized() {
             if (interruptText) interruptText.value = "";
             const turnPayload = {
               ...data.response,
-              audio_base64: data.audio_base64 || data.response?.audio_base64
+              audio_base64: data.audio_base64 || data.response?.audio_base64,
+              is_interruption_response: true
             };
 
             // Play the panelist response directly without canned bridges
-            handleTurnPayload(turnPayload);
+            handleTurnPayload(turnPayload, true);
           } catch (err) {
             console.error("Live interruption error:", err);
             if (micStatusText) micStatusText.textContent = "Interruption error occurred.";
@@ -1400,10 +1476,24 @@ async function ensureMicStreamInitialized() {
 
       // Hands-Free Auto-VAD Voice Triggering
       if (micInputMode === "auto-vad" && !isManualRecording && !isInterruptionInFlight) {
-        // When AI speaker audio is playing, require slight headroom to filter speaker echo
-        const effectiveThreshold = isAudioPlaying ? Math.max(0.12, vadThreshold * 1.5) : vadThreshold;
+        // Echo-cancellation on getUserMedia isolates speaker; match user's gate threshold directly
+        const effectiveThreshold = vadThreshold;
 
         if (rms > effectiveThreshold) {
+          // BARGE-IN: Immediately silence AI speaker (< 5ms) on speech energy detection
+          if (audioPlayer && (!audioPlayer.paused || isAudioPlaying)) {
+            activePlaybackId++;
+            audioPlayer.pause();
+            audioPlayer.currentTime = 0;
+            audioPlayer.src = "";
+            isAudioPlaying = false;
+          }
+          precomputedTurn = null;
+          if (nextTurnTimer) {
+            clearTimeout(nextTurnTimer);
+            nextTurnTimer = null;
+          }
+
           if (!isSpeakingDetected) {
             setupRecorder();
             startRecordingSession(false);
@@ -1450,6 +1540,19 @@ async function ensureMicStreamInitialized() {
 window.addEventListener("keydown", async (e) => {
   if (e.code === "Space" && e.target !== interruptText && !isManualRecording) {
     e.preventDefault();
+    // IMMEDIATE hard-mute on keydown (< 1ms)
+    activePlaybackId++;
+    if (audioPlayer) {
+      audioPlayer.pause();
+      audioPlayer.currentTime = 0;
+      audioPlayer.src = "";
+    }
+    isAudioPlaying = false;
+    precomputedTurn = null;
+    if (nextTurnTimer) {
+      clearTimeout(nextTurnTimer);
+      nextTurnTimer = null;
+    }
     await ensureMicStreamInitialized();
     startRecordingSession(true);
   }
@@ -1466,6 +1569,21 @@ window.addEventListener("keyup", (e) => {
 if (micBtn) {
   micBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
+    // IMMEDIATE hard-mute if starting to record
+    if (!isSpeakingDetected && !isManualRecording) {
+      activePlaybackId++;
+      if (audioPlayer) {
+        audioPlayer.pause();
+        audioPlayer.currentTime = 0;
+        audioPlayer.src = "";
+      }
+      isAudioPlaying = false;
+      precomputedTurn = null;
+      if (nextTurnTimer) {
+        clearTimeout(nextTurnTimer);
+        nextTurnTimer = null;
+      }
+    }
     await ensureMicStreamInitialized();
     if (isSpeakingDetected || isManualRecording) {
       stopAndSendRecording();

@@ -484,6 +484,8 @@ async def handle_human_interruption(
     text: Optional[str] = Form(None),
     target_agent: Optional[str] = Form(None)
 ):
+    # Immediately signal all client audio players to hard-silence (< 5ms)
+    await broadcast_event("silence_speaker", {"reason": "interruption_received"})
     async with ROUNDTABLE_LOCK:
         interruption_text = ""
         whisper_text = ""
