@@ -354,22 +354,37 @@ def resolve_target_agent(interruption_text: str, explicit_target: Optional[str] 
     """
     Intelligently determines which panelist the listener is addressing.
     Handles complex patterns such as:
+    - 'Hey Sarah' or 'Hey have question for shadow' -> host (Sarah)
     - 'Hey Charlie stop want to ask this question to Roger' -> ethicist (Roger)
     - 'Charlie what is your perspective on this?' -> technologist (Charlie)
-    - 'I have a question for Sarah' -> host (Sarah)
     """
     import re
     lower = interruption_text.lower()
     score = {"host": 0, "technologist": 0, "ethicist": 0}
 
-    # 1. Strong directional targeting patterns
+    # Phonetic and common STT recognition aliases (e.g. Whisper often transcribes 'Sarah/Shara' as 'shadow' or 'sara')
+    sarah_re = r'(?:sarah|sara|sera|shara|shadow|sharon|sarha|host|moderator)'
+    charlie_re = r'(?:charlie|charley|charli|charles|technologist|hacker)'
+    roger_re = r'(?:roger|rodger|ethicist|scholar|governance)'
+
+    # 1. Greetings directly directed to a panelist
+    greeting_patterns = [
+        (rf'\b(?:hi|hey|hello|greetings|dear)\s+{sarah_re}\b', "host", 14),
+        (rf'\b(?:hi|hey|hello|greetings|dear)\s+{charlie_re}\b', "technologist", 14),
+        (rf'\b(?:hi|hey|hello|greetings|dear)\s+{roger_re}\b', "ethicist", 14),
+    ]
+    for pattern, agent, weight in greeting_patterns:
+        if re.search(pattern, lower):
+            score[agent] += weight
+
+    # 2. Strong directional targeting patterns
     directional_patterns = [
-        (r'\b(?:to|for|ask|direct to|hear from|let|question to|question for)\s+roger\b', "ethicist", 12),
-        (r'\b(?:to|for|ask|direct to|hear from|let|question to|question for)\s+charlie\b', "technologist", 12),
-        (r'\b(?:to|for|ask|direct to|hear from|let|question to|question for)\s+sarah\b', "host", 12),
-        (r'\broger\s+(?:answer|tell|what|how|why|respond)\b', "ethicist", 9),
-        (r'\bcharlie\s+(?:answer|tell|what|how|why|respond)\b', "technologist", 9),
-        (r'\bsarah\s+(?:answer|tell|what|how|why|respond)\b', "host", 9),
+        (rf'\b(?:to|for|ask|direct to|hear from|let|question to|question for|address|talk to|speak to)\s+{sarah_re}\b', "host", 12),
+        (rf'\b(?:to|for|ask|direct to|hear from|let|question to|question for|address|talk to|speak to)\s+{charlie_re}\b', "technologist", 12),
+        (rf'\b(?:to|for|ask|direct to|hear from|let|question to|question for|address|talk to|speak to)\s+{roger_re}\b', "ethicist", 12),
+        (rf'\b{sarah_re}\s+(?:answer|tell|what|how|why|respond|go ahead|take it)\b', "host", 9),
+        (rf'\b{charlie_re}\s+(?:answer|tell|what|how|why|respond|go ahead|take it)\b', "technologist", 9),
+        (rf'\b{roger_re}\s+(?:answer|tell|what|how|why|respond|go ahead|take it)\b', "ethicist", 9),
         (r'\bquestion\s+(?:for|to)\s+(?:the\s+)?ethic(?:ist)?\b', "ethicist", 9),
         (r'\bquestion\s+(?:for|to)\s+(?:the\s+)?tech(?:nologist)?\b', "technologist", 9),
         (r'\bquestion\s+(?:for|to)\s+(?:the\s+)?host\b', "host", 9),
@@ -378,24 +393,24 @@ def resolve_target_agent(interruption_text: str, explicit_target: Optional[str] 
         if re.search(pattern, lower):
             score[agent] += weight
 
-    # 2. Negation / Stop patterns (disqualify the speaker being interrupted)
+    # 3. Negation / Stop patterns (disqualify the speaker being interrupted)
     negation_patterns = [
-        (r'\b(?:stop|shut up|pause|hold on|wait|quiet|not)\s+charlie\b', "technologist", -15),
-        (r'\bcharlie\s+(?:stop|shut up|pause|hold on|wait)\b', "technologist", -15),
-        (r'\b(?:stop|shut up|pause|hold on|wait|quiet|not)\s+roger\b', "ethicist", -15),
-        (r'\broger\s+(?:stop|shut up|pause|hold on|wait)\b', "ethicist", -15),
-        (r'\b(?:stop|shut up|pause|hold on|wait|quiet|not)\s+sarah\b', "host", -15),
-        (r'\bsarah\s+(?:stop|shut up|pause|hold on|wait)\b', "host", -15),
+        (rf'\b(?:stop|shut up|pause|hold on|wait|quiet|not)\s+{charlie_re}\b', "technologist", -15),
+        (rf'\b{charlie_re}\s+(?:stop|shut up|pause|hold on|wait)\b', "technologist", -15),
+        (rf'\b(?:stop|shut up|pause|hold on|wait|quiet|not)\s+{roger_re}\b', "ethicist", -15),
+        (rf'\b{roger_re}\s+(?:stop|shut up|pause|hold on|wait)\b', "ethicist", -15),
+        (rf'\b(?:stop|shut up|pause|hold on|wait|quiet|not)\s+{sarah_re}\b', "host", -15),
+        (rf'\b{sarah_re}\s+(?:stop|shut up|pause|hold on|wait)\b', "host", -15),
     ]
     for pattern, agent, penalty in negation_patterns:
         if re.search(pattern, lower):
             score[agent] += penalty
 
-    # 3. Simple presence weighting with recency (names near the end get higher weight)
+    # 4. Simple presence weighting with recency (names near the end get higher weight)
     for agent_key, names in [
-        ("host", ["sarah", "moderator", "host"]),
-        ("technologist", ["charlie", "technologist", "hacker"]),
-        ("ethicist", ["roger", "ethicist", "governance", "safety scholar"])
+        ("host", ["sarah", "sara", "shara", "shadow", "sera", "sharon", "moderator", "host"]),
+        ("technologist", ["charlie", "charli", "charley", "charles", "technologist", "hacker"]),
+        ("ethicist", ["roger", "rodger", "ethicist", "governance", "safety scholar"])
     ]:
         for name in names:
             idx = lower.rfind(name)

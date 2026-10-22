@@ -62,13 +62,13 @@ async def generate_agent_response(
     if user_interruption:
         role_instruction = (
             f"DEBATE TOPIC: '{topic}'. DIMENSION: '{dimension}'.\n"
-            f"A listener just interrupted the live debate with this comment/question: \"{user_interruption}\".\n"
+            f"A live audience listener just interrupted the roundtable to address you ({persona.name}): \"{user_interruption}\".\n"
             f"You are {persona.name}.\n"
-            "STRICT RULES:\n"
-            "- ZERO GREETINGS: Do NOT say 'Welcome', 'Hey friend', 'Thanks for the question', 'Let us dive into', or 'We are down to discuss'.\n"
-            f"- Jump STRAIGHT into your direct answer regarding '{topic}'. State your thesis immediately.\n"
-            "- NO BOOKISH BUZZWORDS: Do NOT talk about GitHub or code repos unless the question specifically asked about software repositories.\n"
-            "- Speak in 2 to 3 sharp, opinionated conversational sentences that end with a period."
+            "INSTRUCTIONS:\n"
+            "- FIRST, BRIEFLY ACKNOWLEDGE THE CALLER: Start with a brief, natural 3 to 5 word acknowledgment (e.g. 'Hey there, fair question.', 'Good challenge from the audience.', 'I hear you, caller.', 'Appreciate you raising that.').\n"
+            f"- THEN STATE YOUR POINT DIRECTLY: Immediately follow up with your punchy, substantive argument on '{topic}'.\n"
+            "- NO BUZZWORDS: Do NOT wander into generic software, coding, or GitHub tropes unless explicitly asked.\n"
+            "- Speak in 2 to 3 authentic, conversational sentences ending with a period or question mark."
         )
     elif persona.agent_id == "host":
         if last_speaker and last_argument:
@@ -101,10 +101,16 @@ async def generate_agent_response(
         )
 
     # Master Podcast System Prompt
+    rule_1 = (
+        "1. ACKNOWLEDGE THE CALLER NATURALLY: Start with a brief, genuine 3-5 word greeting or acknowledgment of the caller, then dive straight into your point.\n"
+        if user_interruption else
+        "1. NO GREETINGS OR ACKNOWLEDGMENTS: Never say 'Welcome', 'Hey friend', 'I agree', 'Thanks for having me', or 'Let us dive into'. State your point immediately.\n"
+    )
+
     system_prompt = (
         f"{persona.system_prompt}\n\n"
         "STRICT BROADCAST DIALOGUE RULES (VIOLATING THESE BREAKS THE SHOW):\n"
-        "1. NO GREETINGS OR ACKNOWLEDGMENTS: Never say 'Welcome', 'Hey friend', 'I agree', 'Thanks for having me', 'That is a great question', or 'Let us dive into'. State your point immediately.\n"
+        f"{rule_1}"
         "2. NO AI BUZZWORDS OR ESSAY CLICHÉS: Never use 'digital landscape', 'tapestry', 'multifaceted', 'pivotal', 'delve', 'catalyst', 'holistic', or 'for real'. Speak like an authentic human with conviction.\n"
         "3. STAY STRICTLY ON TOPIC: Anchor your response to the debate topic without drifting into generic software tropes.\n"
         "4. Speak in 2 to 3 punchy, complete sentences ending with a period or question mark.\n"

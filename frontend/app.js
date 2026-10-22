@@ -239,12 +239,15 @@ function handleServerEvent(event) {
       interruptTarget.value = "all";
     }
 
-    appendTranscript({
-      sender: "Audience (Human Interruption)",
-      role: `Directing to ${data.routed_to || "Roundtable"}`,
-      content: data.text,
-      isInterruption: true
-    });
+    const converted = finalizeLiveCaptionBubble(data.text, data.routed_to || "Roundtable");
+    if (!converted) {
+      appendTranscript({
+        sender: "Audience (Human Interruption)",
+        role: `Directing to ${data.routed_to || "Roundtable"}`,
+        content: data.text,
+        isInterruption: true
+      });
+    }
   } else if (type === "topic_updated") {
     if (currentTopicEl) currentTopicEl.textContent = data.topic;
     updateActiveTopicPill(data.topic);
@@ -795,16 +798,10 @@ async function startLiveHandsFreeListening() {
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let browserRecognizer = null;
 let liveRecognizedText = "";
-
-if (SpeechRecognition) {
-  try {
-    browserRecognizer = new SpeechRecognition();
-    browserRecognizer.continuous = true;
-    browserRecognizer.interimResults = true;
-    browserRecognizer.lang = "en-US";
+let isSpeechRecognitionActive = false;
 
 // Live Real-Time Auto-Caption Bubble Controller
-function updateLiveCaptionBubble(text) {
+function updateLiveCaptionBubble(text, statusTitle = "Auto-Caption (Speaking...)") {
   if (!transcriptFeed) return;
   const emptyState = transcriptFeed.querySelector("#chat-empty-state");
   if (emptyState) emptyState.remove();
@@ -817,20 +814,51 @@ function updateLiveCaptionBubble(text) {
     transcriptFeed.appendChild(bubble);
   }
 
+  const displayText = (text || "").trim() || "Listening to your voice...";
   bubble.innerHTML = `
     <div class="live-caption-header">
       <span class="live-caption-dot"></span>
-      <span>Auto-Caption (Speaking...)</span>
+      <span>${statusTitle}</span>
     </div>
-    <div class="live-caption-text">${text || "Listening to your voice..."}</div>
+    <div class="live-caption-text">${displayText}</div>
   `;
   transcriptFeed.scrollTop = transcriptFeed.scrollHeight;
+}
+
+function finalizeLiveCaptionBubble(finalText, routedTo = "") {
+  const bubble = document.getElementById("live-caption-bubble");
+  if (bubble) {
+    bubble.removeAttribute("id");
+    bubble.className = "msg-bubble user-msg";
+    const headerTitle = routedTo ? `Audience Interruption &rarr; ${routedTo}` : "Audience Interruption";
+    bubble.innerHTML = `
+      <div style="font-size: 10.5px; opacity: 0.8; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">${headerTitle}</div>
+      <div class="user-text">${finalText}</div>
+    `;
+    transcriptFeed.scrollTop = transcriptFeed.scrollHeight;
+    const count = transcriptFeed.querySelectorAll(".msg-bubble").length;
+    if (turnCountEl) turnCountEl.textContent = `${count} Turns`;
+    return true;
+  }
+  return false;
 }
 
 function removeLiveCaptionBubble() {
   const bubble = document.getElementById("live-caption-bubble");
   if (bubble) bubble.remove();
 }
+
+function initContinuousSpeechRecognition() {
+  if (!SpeechRecognition || browserRecognizer) return;
+  try {
+    browserRecognizer = new SpeechRecognition();
+    browserRecognizer.continuous = true;
+    browserRecognizer.interimResults = true;
+    browserRecognizer.lang = "en-US";
+
+    browserRecognizer.onstart = () => {
+      isSpeechRecognitionActive = true;
+    };
 
     browserRecognizer.onresult = (event) => {
       let finalStr = "";
@@ -845,18 +873,34 @@ function removeLiveCaptionBubble() {
       const combined = (finalStr + " " + interimStr).trim();
       if (combined) {
         liveRecognizedText = combined;
-        // Real-time live visual speech preview in input, status bar, and chat feed!
         if (interruptText) interruptText.value = combined;
         if (micStatusText) micStatusText.textContent = `🎙️ Heard: "${combined}"`;
-        updateLiveCaptionBubble(combined);
+        // Show live real-time auto-caption immediately
+        updateLiveCaptionBubble(combined, "Auto-Caption (Speaking...)");
       }
     };
 
     browserRecognizer.onerror = (e) => {
-      console.warn("Browser SpeechRecognition notice:", e.error);
+      if (e.error !== "no-speech") {
+        console.warn("Browser SpeechRecognition notice:", e.error);
+      }
     };
+
+    browserRecognizer.onend = () => {
+      isSpeechRecognitionActive = false;
+      // Keep speech recognition continuously warm if mic is active
+      if (isLiveMicActive) {
+        try {
+          browserRecognizer.start();
+        } catch (e) {}
+      }
+    };
+
+    try {
+      browserRecognizer.start();
+    } catch (e) {}
   } catch (err) {
-    console.warn("SpeechRecognition init:", err);
+    console.warn("SpeechRecognition init error:", err);
   }
 }
 
@@ -931,12 +975,9 @@ function startRecordingSession(isManual = false) {
       : "🎙️ Listening to you... (speak naturally)";
   }
 
-  // Start real-time browser speech recognizer
-  if (browserRecognizer) {
-    try {
-      browserRecognizer.start();
-    } catch (e) {}
-  }
+  // Ensure speech recognizer is active and immediately display live auto-caption bubble!
+  initContinuousSpeechRecognition();
+  updateLiveCaptionBubble("Listening to your voice...", "Auto-Caption (Speaking...)");
 
   liveAudioChunks = [];
   if (liveMediaRecorder && liveMediaRecorder.state === "inactive") {
@@ -967,12 +1008,9 @@ function stopAndSendRecording() {
   isSpeakingDetected = false;
   isManualRecording = false;
 
-  // Stop browser speech recognizer
-  if (browserRecognizer) {
-    try {
-      browserRecognizer.stop();
-    } catch (e) {}
-  }
+  // Update live caption bubble status without prematurely removing it
+  const currentPreview = liveRecognizedText.trim();
+  updateLiveCaptionBubble(currentPreview || "Transcribing voice with Whisper...", "Auto-Caption (Routing...)");
 
   if (micLiveDot) {
     micLiveDot.classList.remove("recording");
@@ -1002,6 +1040,7 @@ async function ensureMicStreamInitialized() {
     });
 
     isLiveMicActive = true;
+    initContinuousSpeechRecognition();
     if (micLiveDot) micLiveDot.classList.add("active");
     if (micBtn) micBtn.classList.add("active-mic");
 
@@ -1054,15 +1093,7 @@ async function ensureMicStreamInitialized() {
 
         if ((spokenCandidate || audioBlob.size > 400) && !isInterruptionInFlight) {
           isInterruptionInFlight = true;
-          removeLiveCaptionBubble();
-
-          // Immediately render finalized user question capsule in transcript
-          appendTranscript({
-            sender: "Audience (Human)",
-            role: "Live Question",
-            content: spokenCandidate || "Spoken question to panelist",
-            isInterruption: true
-          });
+          updateLiveCaptionBubble(spokenCandidate || "Transcribing voice with Whisper...", "Auto-Caption (Routing...)");
 
           // Instant Radio Bridge: Play Sarah's immediate 1-second bridge aloud!
           // While bridge audio plays, the full LLM + ElevenLabs answer generates in parallel!
@@ -1107,6 +1138,7 @@ async function ensureMicStreamInitialized() {
             });
             const data = await res.json();
             if (data.status === "silence" || !data.response || !data.response.content) {
+              removeLiveCaptionBubble();
               if (micStatusText) micStatusText.textContent = "🎙️ Filtered: No speech detected.";
               isInterruptionInFlight = false;
               isProcessingTurn = false;
@@ -1121,8 +1153,20 @@ async function ensureMicStreamInitialized() {
               return;
             }
 
+            const finalTranscript = data.interruption || spokenCandidate;
+            const routedTo = data.response?.sender || "Panelist";
+            const converted = finalizeLiveCaptionBubble(finalTranscript, routedTo);
+            if (!converted) {
+              appendTranscript({
+                sender: "Audience (Human Interruption)",
+                role: `Directing to ${routedTo}`,
+                content: finalTranscript,
+                isInterruption: true
+              });
+            }
+
             if (micStatusText) {
-              micStatusText.textContent = `🎙️ Heard: "${data.interruption}" ➔ ${data.response?.sender || 'Agent'} answering aloud`;
+              micStatusText.textContent = `🎙️ Heard: "${finalTranscript}" ➔ ${routedTo} answering aloud`;
             }
             if (interruptText) interruptText.value = "";
             const turnPayload = {
