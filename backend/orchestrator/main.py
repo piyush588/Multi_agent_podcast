@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 # Ensure backend root is on sys.path for local module imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -21,6 +21,14 @@ from orchestrator.a2a_protocol import A2AMessage, A2AIntent, A2ARoundtableCoordi
 from orchestrator.topic_engine import TopicEngine, DEFAULT_TOPIC
 
 app = FastAPI(title="AI Roundtable - Real-Time Multi-Agent Podcast")
+
+@app.middleware("http")
+async def add_no_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 app.add_middleware(
     CORSMiddleware,
