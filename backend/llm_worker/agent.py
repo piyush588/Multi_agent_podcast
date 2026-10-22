@@ -9,15 +9,29 @@ def ensure_complete_sentences(text: str) -> str:
     text = text.strip()
     if not text:
         return text
-    if text[-1] in '.!?':
-        return text
+
+    # 1. Repeatedly strip dangling trailing prepositions, conjunctions, or broken clauses
+    dangling_pattern = r'[\s,-]+(?:favor of|because of|in order to|as well as|such as|instead of|due to|of|to|in|for|with|and|or|that|as|at|the|a|an|by|from|about|into|through|during|before|after|above|below|is|are|was|were|be|been|being)\s*[\.\?\!]*$'
+    for _ in range(4):
+        stripped = re.sub(dangling_pattern, '', text, flags=re.IGNORECASE).strip()
+        if stripped == text or not stripped:
+            break
+        text = stripped
+
+    # 2. Look for sentence-ending punctuation (. ? !)
     matches = list(re.finditer(r'[\.\?\!](?:\s|$)', text))
     if matches:
         last_match = matches[-1]
-        trimmed = text[:last_match.end()].strip()
-        if len(trimmed) > 20:
-            return trimmed
-    return text + "."
+        remainder = text[last_match.end():].strip()
+        # If there's an incomplete dangling fragment after the last punctuated sentence, trim it off
+        if remainder:
+            trimmed = text[:last_match.end()].strip()
+            if len(trimmed) > 25:
+                return trimmed
+        elif text[-1] in '.!?':
+            return text
+
+    return text.rstrip(',- ') + "."
 
 def clean_speech_text(text: str, persona_name: str) -> str:
     """Cleans text so ElevenLabs speaks authentic human audio without stage tags or artifacts."""
@@ -30,7 +44,7 @@ def clean_speech_text(text: str, persona_name: str) -> str:
     # 3. Strip bracketed speaker tags e.g. [Sarah]: or [Charlie] -
     text = re.sub(r'^\[[A-Za-z\s]+\]\s*[:\-]?\s*', '', text)
     # 4. Strip robotic assistant filler phrases like 'let me address this for you'
-    text = re.sub(r'\b(?:let me|allow me to)\s+(?:address|answer|tackle|respond to|take)\s+(?:this\s+for\s+you|that\s+for\s+you|this|that|your question|your point)[\s,.:;]*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b(?:let me|allow me to)\s+(?:address|answer|tackle|respond to|take)\s+(?:this\s+for\s+you|that\s+for\s+you|this|that|your question|your point)[\s,.:;]*(?:caller|friend|listener|audience member)?[\s,.:;]*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\b(?:to address (?:your|this)|regarding your)\s+(?:point|question|inquiry)[\s,.:;]*', '', text, flags=re.IGNORECASE)
     # 5. Strip parenthetical stage directions like (laugh), (chuckles), (pauses), [sighs]
     text = re.sub(r'[\(\[][a-zA-Z\s]+[\)\]]', '', text)
@@ -154,7 +168,7 @@ async def generate_agent_response(
                             "repeat_penalty": 1.25,
                             "presence_penalty": 0.5,
                             "frequency_penalty": 0.3,
-                            "num_predict": 55 if user_interruption else 100
+                            "num_predict": 180
                         }
                     }
                 )

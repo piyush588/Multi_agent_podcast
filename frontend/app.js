@@ -32,38 +32,37 @@ const currentTimeEl = document.getElementById("current-time");
 const speakerStatusCaption = document.getElementById("speaker-status-caption");
 const themeBtn = document.getElementById("theme-btn");
 
-// Signature Live Auto-Caption Dock (CC) Controller
+// Signature Live Auto-Caption Dock (CC) — User Voice Transcription Only
 const liveCaptionDock = document.getElementById("live-caption-dock");
 const captionSpeakerTag = document.getElementById("caption-speaker-tag");
 const captionDisplayText = document.getElementById("caption-display-text");
 
-let currentCaptionWords = [];
-let currentCaptionSpeaker = "";
-
-function setLiveAutoCaptionSpeaker(speakerName, roleName, isUser = false) {
+function setUserCaptionState(state, customLabel = null) {
   if (!captionSpeakerTag || !liveCaptionDock) return;
-  if (isUser) {
+  if (state === "speaking") {
     liveCaptionDock.className = "live-caption-dock user-active";
-    captionSpeakerTag.textContent = "🔴 YOU (AUDIENCE)";
+    captionSpeakerTag.textContent = customLabel || "LISTENING TO YOU...";
     captionSpeakerTag.style.color = "var(--accent-rose)";
     captionSpeakerTag.style.borderColor = "var(--accent-rose)";
-  } else if (speakerName) {
+  } else if (state === "transcribing") {
+    liveCaptionDock.className = "live-caption-dock user-active";
+    captionSpeakerTag.textContent = customLabel || "TRANSCRIBING WHISPER...";
+    captionSpeakerTag.style.color = "var(--accent-amber)";
+    captionSpeakerTag.style.borderColor = "var(--accent-amber)";
+  } else if (state === "captured") {
     liveCaptionDock.className = "live-caption-dock active-speaking";
-    captionSpeakerTag.textContent = `${speakerName.toUpperCase()}${roleName ? ' • ' + roleName.toUpperCase() : ''}`;
-    let color = "#FF6B4A";
-    if (speakerName.includes("Charlie")) color = "#F59E0B";
-    else if (speakerName.includes("Roger")) color = "#2563EB";
-    captionSpeakerTag.style.color = color;
-    captionSpeakerTag.style.borderColor = color;
+    captionSpeakerTag.textContent = customLabel || "YOU ASKED";
+    captionSpeakerTag.style.color = "#10B981";
+    captionSpeakerTag.style.borderColor = "#10B981";
   } else {
     liveCaptionDock.className = "live-caption-dock";
-    captionSpeakerTag.textContent = "STUDIO STANDBY";
+    captionSpeakerTag.textContent = customLabel || "MIC READY";
     captionSpeakerTag.style.color = "var(--text-secondary)";
     captionSpeakerTag.style.borderColor = "var(--border-subtle)";
   }
 }
 
-function updateLiveAutoCaptionText(text, isPlaceholder = false) {
+function updateUserCaptionText(text, isPlaceholder = false) {
   if (!captionDisplayText) return;
   if (isPlaceholder) {
     captionDisplayText.innerHTML = `<span class="caption-placeholder">${text}</span>`;
@@ -72,17 +71,9 @@ function updateLiveAutoCaptionText(text, isPlaceholder = false) {
   }
 }
 
-function streamLiveCaptionForTurn(turnText, speakerName, roleName) {
-  currentCaptionWords = (turnText || "").split(" ").filter(w => w.trim().length > 0);
-  currentCaptionSpeaker = speakerName;
-  setLiveAutoCaptionSpeaker(speakerName, roleName, false);
-  updateLiveAutoCaptionText(turnText);
-}
-
-function resetLiveAutoCaption() {
-  currentCaptionWords = [];
-  setLiveAutoCaptionSpeaker(null, null, false);
-  updateLiveAutoCaptionText("Studio standby. Start roundtable or speak into mic to see real-time subtitles...", true);
+function resetUserCaption() {
+  setUserCaptionState("idle", "MIC READY");
+  updateUserCaptionText("Speak aloud anytime into your mic to ask a question or interrupt the debate...", true);
 }
 
 // Instantiate ElevenLabs Interactive Particle Voice Sphere
@@ -292,15 +283,17 @@ function handleServerEvent(event) {
       interruptTarget.value = "all";
     }
 
-    const converted = finalizeLiveCaptionBubble(data.text, data.routed_to || "Roundtable");
-    if (!converted) {
-      appendTranscript({
-        sender: "Audience (Human Interruption)",
-        role: `Directing to ${data.routed_to || "Roundtable"}`,
-        content: data.text,
-        isInterruption: true
-      });
-    }
+    // Update Live Auto-Caption Dock with user speech
+    setUserCaptionState("captured", "YOU ASKED");
+    updateUserCaptionText(data.text);
+
+    // Append to transcript (deduplicated by appendTranscript)
+    appendTranscript({
+      sender: "Audience (Human Interruption)",
+      role: `Directing to ${data.routed_to || "Roundtable"}`,
+      content: data.text,
+      isInterruption: true
+    });
   } else if (type === "topic_updated") {
     if (currentTopicEl) currentTopicEl.textContent = data.topic;
     updateActiveTopicPill(data.topic);
@@ -379,10 +372,8 @@ function handleTurnPayload(payload) {
 
   if (payload.audio_base64) {
     setOrbState("talking", payload.agent_id);
-    streamLiveCaptionForTurn(payload.content, payload.sender, payload.role);
     playAudioBase64(payload.audio_base64, () => {
       setOrbState("idle", null);
-      setTimeout(resetLiveAutoCaption, 1200);
       isProcessingTurn = false;
       isAudioPlaying = false;
       isInterruptionInFlight = false;
@@ -415,10 +406,8 @@ function handleTurnPayload(payload) {
   } else {
     // If no audio (or fallback), hold speaking state for 2s then continue
     setOrbState("talking", payload.agent_id);
-    streamLiveCaptionForTurn(payload.content, payload.sender, payload.role);
     setTimeout(() => {
       setOrbState("idle", null);
-      setTimeout(resetLiveAutoCaption, 800);
       isProcessingTurn = false;
       isAudioPlaying = false;
       isInterruptionInFlight = false;
@@ -480,7 +469,7 @@ function playAudioBase64(base64Data, onEndCallback) {
   }
 }
 
-// Audio Scrubber Tracking & Real-Time Word Highlighting
+// Audio Scrubber Tracking & Real-Time Time Display
 audioPlayer.addEventListener("timeupdate", () => {
   if (audioPlayer.duration && !isNaN(audioPlayer.duration)) {
     const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
@@ -489,18 +478,6 @@ audioPlayer.addEventListener("timeupdate", () => {
       const mins = Math.floor(audioPlayer.currentTime / 60);
       const secs = Math.floor(audioPlayer.currentTime % 60);
       currentTimeEl.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-    }
-
-    // Real-time live subtitle streaming in the Auto-Caption Dock!
-    if (currentCaptionWords.length > 0 && captionDisplayText && isAudioPlaying) {
-      const wordIdx = Math.min(
-        currentCaptionWords.length - 1,
-        Math.floor((audioPlayer.currentTime / audioPlayer.duration) * currentCaptionWords.length)
-      );
-      const before = currentCaptionWords.slice(0, wordIdx).join(" ");
-      const activeWord = currentCaptionWords[wordIdx] || "";
-      const after = currentCaptionWords.slice(wordIdx + 1).join(" ");
-      captionDisplayText.innerHTML = `${before} <span class="caption-word-active">${activeWord}</span> ${after}`;
     }
   }
 });
@@ -592,12 +569,15 @@ function appendTranscript(turn) {
   const emptyState = transcriptFeed.querySelector("#chat-empty-state");
   if (emptyState) emptyState.remove();
 
-  // Prevent duplicate rendering of identical text
-  const cleanContent = turn.content.trim();
+  // Prevent duplicate rendering of identical text (both agent and user messages)
+  const cleanContent = turn.content.trim().toLowerCase();
   const existingBubbles = transcriptFeed.querySelectorAll(".msg-bubble");
   for (let i = 0; i < existingBubbles.length; i++) {
-    const textEl = existingBubbles[i].querySelector(".agent-text") || existingBubbles[i];
-    if (textEl && textEl.textContent.trim() === cleanContent) {
+    const userEl = existingBubbles[i].querySelector(".user-text");
+    const agentEl = existingBubbles[i].querySelector(".agent-text");
+    const textEl = userEl || agentEl || existingBubbles[i];
+    const text = textEl.textContent.trim().toLowerCase();
+    if (text === cleanContent || text.includes(cleanContent) || cleanContent.includes(text)) {
       return; // Already rendered!
     }
   }
@@ -606,9 +586,10 @@ function appendTranscript(turn) {
 
   if (turn.isInterruption || turn.sender?.includes("Audience")) {
     bubble.className = "msg-bubble user-msg";
+    const targetTag = turn.role ? ` &rarr; ${turn.role.replace(/^Directing to\s+/i, '')}` : "";
     bubble.innerHTML = `
-      <div style="font-size: 10.5px; opacity: 0.8; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Audience Interruption</div>
-      <div>${turn.content}</div>
+      <div style="font-size: 10.5px; opacity: 0.8; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Audience Interruption${targetTag}</div>
+      <div class="user-text">${turn.content}</div>
     `;
   } else {
     const agentKey = (turn.agent_id || "").toLowerCase();
@@ -869,52 +850,34 @@ let browserRecognizer = null;
 let liveRecognizedText = "";
 let isSpeechRecognitionActive = false;
 
-// Live Real-Time Auto-Caption Bubble Controller
-function updateLiveCaptionBubble(text, statusTitle = "Auto-Caption (Speaking...)") {
-  if (!transcriptFeed) return;
-  const emptyState = transcriptFeed.querySelector("#chat-empty-state");
-  if (emptyState) emptyState.remove();
-
-  let bubble = document.getElementById("live-caption-bubble");
-  if (!bubble) {
-    bubble = document.createElement("div");
-    bubble.id = "live-caption-bubble";
-    bubble.className = "msg-bubble user-msg live-caption-bubble";
-    transcriptFeed.appendChild(bubble);
-  }
-
-  const displayText = (text || "").trim() || "Listening to your voice...";
-  bubble.innerHTML = `
-    <div class="live-caption-header">
-      <span class="live-caption-dot"></span>
-      <span>${statusTitle}</span>
-    </div>
-    <div class="live-caption-text">${displayText}</div>
-  `;
-  transcriptFeed.scrollTop = transcriptFeed.scrollHeight;
+// Live Real-Time Auto-Caption Dock Bridge Helpers
+function updateLiveCaptionBubble(text, statusTitle = "YOU ARE SPEAKING") {
+  setUserCaptionState("speaking", statusTitle);
+  updateUserCaptionText(text || "Listening to your voice...");
 }
 
 function finalizeLiveCaptionBubble(finalText, routedTo = "") {
-  const bubble = document.getElementById("live-caption-bubble");
-  if (bubble) {
-    bubble.removeAttribute("id");
-    bubble.className = "msg-bubble user-msg";
-    const headerTitle = routedTo ? `Audience Interruption &rarr; ${routedTo}` : "Audience Interruption";
-    bubble.innerHTML = `
-      <div style="font-size: 10.5px; opacity: 0.8; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">${headerTitle}</div>
-      <div class="user-text">${finalText}</div>
-    `;
-    transcriptFeed.scrollTop = transcriptFeed.scrollHeight;
-    const count = transcriptFeed.querySelectorAll(".msg-bubble").length;
-    if (turnCountEl) turnCountEl.textContent = `${count} Turns`;
-    return true;
-  }
-  return false;
+  setUserCaptionState("captured", "YOU ASKED");
+  updateUserCaptionText(finalText);
+  return false; // Prompts caller to use unified appendTranscript()
 }
 
 function removeLiveCaptionBubble() {
-  const bubble = document.getElementById("live-caption-bubble");
-  if (bubble) bubble.remove();
+  resetUserCaption();
+}
+
+function updateLiveAutoCaptionText(text) {
+  updateUserCaptionText(text);
+}
+
+function setLiveAutoCaptionSpeaker(speaker, role, isUser = false) {
+  if (isUser) {
+    setUserCaptionState("speaking", "YOU (AUDIENCE)");
+  }
+}
+
+function resetLiveAutoCaption() {
+  resetUserCaption();
 }
 
 function initContinuousSpeechRecognition() {
@@ -944,9 +907,9 @@ function initContinuousSpeechRecognition() {
         liveRecognizedText = combined;
         if (interruptText) interruptText.value = combined;
         if (micStatusText) micStatusText.textContent = `🎙️ Heard: "${combined}"`;
-        // Show live real-time auto-caption immediately in both dock and bubble
-        updateLiveCaptionBubble(combined, "Auto-Caption (Speaking...)");
-        updateLiveAutoCaptionText(combined);
+        // Show live real-time auto-caption immediately in Live Auto-Caption Dock
+        setUserCaptionState("speaking", "YOU ARE SPEAKING");
+        updateUserCaptionText(combined);
       }
     };
 
@@ -1045,11 +1008,10 @@ function startRecordingSession(isManual = false) {
       : "🎙️ Listening to you... (speak naturally)";
   }
 
-  // Ensure speech recognizer is active and immediately display live auto-caption bubble!
+  // Ensure speech recognizer is active and immediately display live auto-caption in dock!
   initContinuousSpeechRecognition();
-  updateLiveCaptionBubble("Listening to your voice...", "Auto-Caption (Speaking...)");
-  setLiveAutoCaptionSpeaker("Audience", "Live Voice", true);
-  updateLiveAutoCaptionText("Listening to your voice... Speak your question aloud.");
+  setUserCaptionState("speaking", "LISTENING TO YOU...");
+  updateUserCaptionText("Listening to your voice... Speak your question aloud.");
 
   liveAudioChunks = [];
   if (liveMediaRecorder && liveMediaRecorder.state === "inactive") {
@@ -1080,10 +1042,10 @@ function stopAndSendRecording() {
   isSpeakingDetected = false;
   isManualRecording = false;
 
-  // Update live caption bubble status without prematurely removing it
+  // Update live caption dock status
   const currentPreview = liveRecognizedText.trim();
-  updateLiveCaptionBubble(currentPreview || "Transcribing voice with Whisper...", "Auto-Caption (Routing...)");
-  updateLiveAutoCaptionText(currentPreview || "Transcribing voice with Whisper AI...");
+  setUserCaptionState("transcribing", "TRANSCRIBING WHISPER...");
+  updateUserCaptionText(currentPreview || "Transcribing voice with Whisper AI...");
 
   if (micLiveDot) {
     micLiveDot.classList.remove("recording");
@@ -1166,7 +1128,8 @@ async function ensureMicStreamInitialized() {
 
         if ((spokenCandidate || audioBlob.size > 400) && !isInterruptionInFlight) {
           isInterruptionInFlight = true;
-          updateLiveCaptionBubble(spokenCandidate || "Transcribing voice with Whisper...", "Auto-Caption (Routing...)");
+          setUserCaptionState("transcribing", "TRANSCRIBING WHISPER...");
+          updateUserCaptionText(spokenCandidate || "Transcribing voice with Whisper AI...");
           setOrbState("thinking", null);
 
           if (micStatusText) micStatusText.textContent = "⚡ Transcribing & routing question...";
@@ -1188,7 +1151,7 @@ async function ensureMicStreamInitialized() {
             });
             const data = await res.json();
             if (data.status === "silence" || !data.response || !data.response.content) {
-              removeLiveCaptionBubble();
+              resetUserCaption();
               if (micStatusText) micStatusText.textContent = "🎙️ Filtered: No speech detected.";
               isInterruptionInFlight = false;
               isProcessingTurn = false;
@@ -1205,16 +1168,16 @@ async function ensureMicStreamInitialized() {
 
             const finalTranscript = data.interruption || spokenCandidate;
             const routedTo = data.response?.sender || "Panelist";
-            updateLiveAutoCaptionText(finalTranscript);
-            const converted = finalizeLiveCaptionBubble(finalTranscript, routedTo);
-            if (!converted) {
-              appendTranscript({
-                sender: "Audience (Human Interruption)",
-                role: `Directing to ${routedTo}`,
-                content: finalTranscript,
-                isInterruption: true
-              });
-            }
+            
+            setUserCaptionState("captured", "YOU ASKED");
+            updateUserCaptionText(finalTranscript);
+
+            appendTranscript({
+              sender: "Audience (Human Interruption)",
+              role: `Directing to ${routedTo}`,
+              content: finalTranscript,
+              isInterruption: true
+            });
 
             if (micStatusText) {
               micStatusText.textContent = `🎙️ Heard: "${finalTranscript}" ➔ ${routedTo} answering aloud`;
@@ -1236,7 +1199,7 @@ async function ensureMicStreamInitialized() {
             setTimeout(() => { isInterruptionInFlight = false; }, 2000);
           }
         } else {
-          removeLiveCaptionBubble();
+          resetUserCaption();
           isProcessingTurn = false;
           setOrbState("idle", null);
         }
