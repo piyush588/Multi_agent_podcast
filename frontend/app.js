@@ -1126,6 +1126,7 @@ function startRecordingSession(isManual = false) {
   liveRecognizedText = "";
 
   ensureSpeechRecognitionActive();
+  startInterimWhisperStreaming();
   setUserCaptionState("speaking", "LISTENING TO YOU...");
   if (captionDisplayText) {
     captionDisplayText.innerHTML = `<span class="caption-active-dot">●</span> <span class="caption-hint">Listening to your voice... Speak your question aloud.</span>`;
@@ -1147,7 +1148,61 @@ function startRecordingSession(isManual = false) {
   }, 45000);
 }
 
+let streamInterval = null;
+let isStreamingSttInFlight = false;
+
+function startInterimWhisperStreaming() {
+  if (streamInterval) clearInterval(streamInterval);
+  streamInterval = setInterval(async () => {
+    if (!isSpeakingDetected && !isManualRecording) {
+      clearInterval(streamInterval);
+      streamInterval = null;
+      return;
+    }
+    if (isStreamingSttInFlight || liveAudioChunks.length === 0) return;
+
+    isStreamingSttInFlight = true;
+    try {
+      const mime = liveMediaRecorder?.mimeType || "audio/webm";
+      const rollingBlob = new Blob(liveAudioChunks, { type: mime });
+      if (rollingBlob.size > 1500) {
+        const fd = new FormData();
+        fd.append("file", rollingBlob, "stream.webm");
+        const resp = await fetch(`${API_BASE}/api/stt/stream`, { method: "POST", body: fd });
+        if (resp.ok) {
+          const res = await resp.json();
+          if (res.text && res.text.trim()) {
+            const streamedText = res.text.trim();
+            if (!liveRecognizedText || streamedText.length >= liveRecognizedText.length - 2) {
+              liveRecognizedText = streamedText;
+              if (interruptText) interruptText.value = streamedText;
+              if (micStatusText) micStatusText.textContent = `🎙️ "${streamedText}"`;
+
+              setUserCaptionState("speaking", "YOU ARE SPEAKING...");
+              if (captionDisplayText) {
+                captionDisplayText.innerHTML = `<span>${escapeHtml(streamedText)} </span><span class="caption-live-word">●</span>`;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+    } finally {
+      isStreamingSttInFlight = false;
+    }
+  }, 750);
+}
+
+function stopInterimWhisperStreaming() {
+  if (streamInterval) {
+    clearInterval(streamInterval);
+    streamInterval = null;
+  }
+  isStreamingSttInFlight = false;
+}
+
 function stopAndSendRecording() {
+  stopInterimWhisperStreaming();
   if (speechSilenceTimer) {
     clearTimeout(speechSilenceTimer);
     speechSilenceTimer = null;

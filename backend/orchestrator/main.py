@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import asyncio
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -463,6 +464,19 @@ def extract_core_question(text: str) -> str:
         text = re.sub(pat, '', text, flags=re.IGNORECASE).strip()
 
     return text
+
+@app.post("/api/stt/stream")
+async def stream_stt(file: UploadFile = File(...)):
+    """Ultra-fast interim speech recognition endpoint using local GPU Whisper."""
+    try:
+        audio_bytes = await file.read()
+        if not audio_bytes or len(audio_bytes) < 400:
+            return {"text": ""}
+        text = await call_whisper(audio_bytes)
+        clean = extract_core_question(text)
+        return {"text": clean or text}
+    except Exception as e:
+        return {"text": "", "error": str(e)}
 
 @app.post("/api/interrupt")
 async def handle_human_interruption(
