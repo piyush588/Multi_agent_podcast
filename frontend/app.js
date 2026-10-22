@@ -11,6 +11,7 @@ const audioPlayer = document.getElementById("audio-player");
 const startBtn = document.getElementById("start-btn");
 const startBtnText = document.getElementById("start-btn-text");
 const startBtnIcon = document.getElementById("start-btn-icon");
+const stopSpeechBtn = document.getElementById("stop-speech-btn");
 const nextTurnBtn = document.getElementById("next-turn-btn");
 const currentTopicEl = document.getElementById("current-topic");
 const changeTopicBtn = document.getElementById("change-topic-btn");
@@ -753,6 +754,17 @@ async function toggleAutonomousDebate() {
       triggerNextTurn();
     }
   } else {
+    // Cut audio immediately when paused (< 5ms)
+    if (audioPlayer) {
+      audioPlayer.pause();
+      audioPlayer.currentTime = 0;
+    }
+    isAudioPlaying = false;
+    isProcessingTurn = false;
+    if (nextTurnTimer) {
+      clearTimeout(nextTurnTimer);
+      nextTurnTimer = null;
+    }
     if (startBtn) startBtn.classList.remove("running");
     if (startBtnText) startBtnText.textContent = "Start Autonomous Roundtable";
     if (startBtnIcon) {
@@ -762,9 +774,60 @@ async function toggleAutonomousDebate() {
         </svg>
       `;
     }
-    isProcessingTurn = false;
     setOrbState("idle", null);
+    if (waveformBars) waveformBars.classList.remove("active");
+    if (playbackProgress) playbackProgress.style.width = "0%";
+    if (speakerStatusCaption) speakerStatusCaption.textContent = "Roundtable Paused";
+    try {
+      fetch(`${API_BASE}/api/podcast/stop`, { method: "POST" });
+    } catch (e) {}
   }
+}
+
+// Dedicated Stop Speaking Action (Immediate Hard Mute / Silence)
+function stopSpeakingImmediately() {
+  console.log("⏹️ Stop speaking action triggered");
+  // 1. Immediately cut all audio playback (< 5ms)
+  if (audioPlayer) {
+    audioPlayer.pause();
+    audioPlayer.currentTime = 0;
+  }
+  isAudioPlaying = false;
+  isProcessingTurn = false;
+
+  // 2. Clear any pending turn timers and lookahead queues
+  if (nextTurnTimer) {
+    clearTimeout(nextTurnTimer);
+    nextTurnTimer = null;
+  }
+  precomputedTurn = null;
+  audioQueue = [];
+
+  // 3. Pause autonomous loop so it doesn't automatically fire the next turn
+  if (isRunning) {
+    isRunning = false;
+    if (startBtn) startBtn.classList.remove("running");
+    if (startBtnText) startBtnText.textContent = "Start Autonomous Roundtable";
+    if (startBtnIcon) {
+      startBtnIcon.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="6 4 18 12 6 20 6 4"/>
+        </svg>
+      `;
+    }
+  }
+
+  // 4. Reset visual states
+  setOrbState("idle", null);
+  if (waveformBars) waveformBars.classList.remove("active");
+  if (playbackProgress) playbackProgress.style.width = "0%";
+  if (speakerStatusCaption) speakerStatusCaption.textContent = "Speech Stopped";
+  if (micStatusText) micStatusText.textContent = "⏹️ Speaking stopped. Click Start or speak to continue.";
+
+  // 5. Notify backend to sync podcast state
+  try {
+    fetch(`${API_BASE}/api/podcast/stop`, { method: "POST" });
+  } catch (e) {}
 }
 
 // Send Text Interruption
@@ -1321,9 +1384,17 @@ if (micBtn) {
 
 // Master Controls
 if (startBtn) startBtn.addEventListener("click", toggleAutonomousDebate);
+if (stopSpeechBtn) stopSpeechBtn.addEventListener("click", stopSpeakingImmediately);
 if (nextTurnBtn) nextTurnBtn.addEventListener("click", triggerNextTurn);
 if (sendInterruptBtn) sendInterruptBtn.addEventListener("click", sendInterruption);
 if (clearHistoryBtn) clearHistoryBtn.addEventListener("click", handleClearHistory);
+
+// Keyboard shortcut: Escape instantly silences and stops speaking
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    stopSpeakingImmediately();
+  }
+});
 
 if (interruptText) {
   interruptText.addEventListener("keypress", (e) => {
