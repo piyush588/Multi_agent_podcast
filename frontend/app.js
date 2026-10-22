@@ -1167,33 +1167,9 @@ async function ensureMicStreamInitialized() {
         if ((spokenCandidate || audioBlob.size > 400) && !isInterruptionInFlight) {
           isInterruptionInFlight = true;
           updateLiveCaptionBubble(spokenCandidate || "Transcribing voice with Whisper...", "Auto-Caption (Routing...)");
+          setOrbState("thinking", null);
 
-          // Instant Radio Bridge: Play Sarah's immediate 1-second bridge aloud!
-          // While bridge audio plays, the full LLM + ElevenLabs answer generates in parallel!
-          const lowerSpoken = (spokenCandidate || "").toLowerCase();
-          const target = interruptTarget ? interruptTarget.value : "all";
-          let bridgeFile = "/static/bridges/bridge_host.mp3";
-          if (lowerSpoken.includes("roger") || target === "ethicist") {
-            bridgeFile = "/static/bridges/bridge_ethicist.mp3";
-          } else if (lowerSpoken.includes("charlie") || target === "technologist") {
-            bridgeFile = "/static/bridges/bridge_technologist.mp3";
-          }
-
-          setOrbState("talking", "host");
-          const bridgeAudio = new Audio(bridgeFile);
-          let bridgeFinished = false;
-          let turnDataToPlay = null;
-
-          bridgeAudio.onended = () => {
-            bridgeFinished = true;
-            if (turnDataToPlay) {
-              handleTurnPayload(turnDataToPlay);
-              turnDataToPlay = null;
-            }
-          };
-          bridgeAudio.play().catch(() => { bridgeFinished = true; });
-
-          if (micStatusText) micStatusText.textContent = "⚡ Routing question to panelist...";
+          if (micStatusText) micStatusText.textContent = "⚡ Transcribing & routing question...";
           const formData = new FormData();
           if (spokenCandidate) {
             formData.append("text", spokenCandidate);
@@ -1201,6 +1177,7 @@ async function ensureMicStreamInitialized() {
           if (audioBlob.size > 100) {
             formData.append("file", audioBlob, "interruption.webm");
           }
+          const target = interruptTarget ? interruptTarget.value : "all";
           if (target !== "all") formData.append("target_agent", target);
           if (interruptTarget) interruptTarget.value = "all";
 
@@ -1248,13 +1225,8 @@ async function ensureMicStreamInitialized() {
               audio_base64: data.audio_base64 || data.response?.audio_base64
             };
 
-            // If the 1.2s bridge audio has already completed, start the panelist immediately!
-            // If the bridge is still playing, queue the panelist to start the millisecond the bridge ends!
-            if (bridgeFinished) {
-              handleTurnPayload(turnPayload);
-            } else {
-              turnDataToPlay = turnPayload;
-            }
+            // Play the panelist response directly without canned bridges
+            handleTurnPayload(turnPayload);
           } catch (err) {
             console.error("Live interruption error:", err);
             if (micStatusText) micStatusText.textContent = "Interruption error occurred.";

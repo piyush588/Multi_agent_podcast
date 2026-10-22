@@ -140,7 +140,11 @@ async def call_whisper(audio_bytes: bytes) -> str:
     try:
         async with httpx.AsyncClient() as client:
             files = {"file": ("audio.wav", wav_16k, "audio/wav")}
-            resp = await client.post(DEFAULT_SERVER_URL, files=files, timeout=30)
+            data = {
+                "temperature": "0.0",
+                "prompt": "Sarah, Charlie, Roger, AI roundtable debate, podcast, question for Sarah, question for Charlie, question for Roger"
+            }
+            resp = await client.post(DEFAULT_SERVER_URL, files=files, data=data, timeout=30)
             if resp.status_code != 200:
                 print(f"Whisper server notice: {resp.status_code} {resp.text}")
                 return ""

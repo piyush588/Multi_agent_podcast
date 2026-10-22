@@ -438,10 +438,15 @@ async def handle_human_interruption(
     target_agent: Optional[str] = Form(None)
 ):
     async with ROUNDTABLE_LOCK:
-        interruption_text = (text or "").strip()
-        if not interruption_text and file:
+        interruption_text = ""
+        # Always run high-accuracy GPU Whisper on real audio when uploaded
+        if file:
             audio_bytes = await file.read()
             interruption_text = await call_whisper(audio_bytes)
+
+        # Fallback to client text only if Whisper was silent or text was typed
+        if not interruption_text and text:
+            interruption_text = text.strip()
 
         interruption_text = interruption_text.strip()
         words = interruption_text.split()
