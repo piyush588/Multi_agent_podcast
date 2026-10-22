@@ -260,71 +260,70 @@ class CommitPayload(BaseModel):
 @app.post("/api/turn/prefetch")
 async def prefetch_turn():
     """Look-ahead precomputation: prepares the next agent turn and synthesizes audio while current audio is playing."""
-    async with ROUNDTABLE_LOCK:
-        last_agent = get_last_speaker_id()
-        if not PODCAST_STATE["history"]:
-            target_agent = "host"
-            a2a_intent = A2AIntent.OPEN_ROUNDTABLE
-            dimension = "Show Introduction"
-            claim = f"Opening roundtable on: {PODCAST_STATE['topic']}"
-        elif last_agent == "host":
-            target_agent = "technologist"
-            a2a_intent = A2AIntent.PROPOSAL
-            battleground = topic_engine.get_current_battleground()
-            dimension = battleground.get("dimension", "Innovation Angle")
-            claim = "Charlie proposing practical engineering arguments."
-        elif last_agent == "technologist":
-            target_agent = "ethicist"
-            a2a_intent = A2AIntent.CHALLENGE
-            battleground = topic_engine.get_current_battleground()
-            dimension = battleground.get("dimension", "Safety & Risk")
-            claim = "Roger challenging Charlie on systemic accountability."
-        else:
-            target_agent = "host"
-            a2a_intent = A2AIntent.SYNTHESIZE
-            battleground = topic_engine.get_current_battleground()
-            dimension = battleground.get("dimension", "Moderation")
-            claim = "Sarah synthesizing debate tension and pushing next question."
-
-        persona = PERSONAS[target_agent]
+    last_agent = get_last_speaker_id()
+    if not PODCAST_STATE["history"]:
+        target_agent = "host"
+        a2a_intent = A2AIntent.OPEN_ROUNDTABLE
+        dimension = "Show Introduction"
+        claim = f"Opening roundtable on: {PODCAST_STATE['topic']}"
+    elif last_agent == "host":
+        target_agent = "technologist"
+        a2a_intent = A2AIntent.PROPOSAL
         battleground = topic_engine.get_current_battleground()
-        a2a_msg = A2AMessage(
-            sender_id=last_agent or "moderator",
-            receiver_id=persona.agent_id,
-            intent=a2a_intent,
-            dimension=dimension,
-            claim_summary=claim,
-            priority=0.85
-        )
+        dimension = battleground.get("dimension", "Innovation Angle")
+        claim = "Charlie proposing practical engineering arguments."
+    elif last_agent == "technologist":
+        target_agent = "ethicist"
+        a2a_intent = A2AIntent.CHALLENGE
+        battleground = topic_engine.get_current_battleground()
+        dimension = battleground.get("dimension", "Safety & Risk")
+        claim = "Roger challenging Charlie on systemic accountability."
+    else:
+        target_agent = "host"
+        a2a_intent = A2AIntent.SYNTHESIZE
+        battleground = topic_engine.get_current_battleground()
+        dimension = battleground.get("dimension", "Moderation")
+        claim = "Sarah synthesizing debate tension and pushing next question."
 
-        novelty_rules = topic_engine.get_novelty_directives()
-        text_response = await generate_agent_response(
-            persona=persona,
-            history=PODCAST_STATE["history"],
-            topic=PODCAST_STATE["topic"],
-            battleground=battleground,
-            novelty_directives=novelty_rules
-        )
+    persona = PERSONAS[target_agent]
+    battleground = topic_engine.get_current_battleground()
+    a2a_msg = A2AMessage(
+        sender_id=last_agent or "moderator",
+        receiver_id=persona.agent_id,
+        intent=a2a_intent,
+        dimension=dimension,
+        claim_summary=claim,
+        priority=0.85
+    )
 
-        audio_base64 = ""
-        try:
-            audio_bytes = await synthesize(text=text_response, voice_id=persona.voice_id)
-            if audio_bytes:
-                import base64
-                audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
-        except Exception as e:
-            print(f"Prefetch ElevenLabs synthesis warning: {e}")
+    novelty_rules = topic_engine.get_novelty_directives()
+    text_response = await generate_agent_response(
+        persona=persona,
+        history=PODCAST_STATE["history"],
+        topic=PODCAST_STATE["topic"],
+        battleground=battleground,
+        novelty_directives=novelty_rules
+    )
 
-        turn_data = {
-            "agent_id": persona.agent_id,
-            "sender": persona.name,
-            "role": persona.role,
-            "content": text_response,
-            "audio_base64": audio_base64,
-            "a2a_msg": a2a_msg.to_dict()
-        }
+    audio_base64 = ""
+    try:
+        audio_bytes = await synthesize(text=text_response, voice_id=persona.voice_id)
+        if audio_bytes:
+            import base64
+            audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+    except Exception as e:
+        print(f"Prefetch ElevenLabs synthesis warning: {e}")
 
-        return {"prefetched": True, "turn": turn_data}
+    turn_data = {
+        "agent_id": persona.agent_id,
+        "sender": persona.name,
+        "role": persona.role,
+        "content": text_response,
+        "audio_base64": audio_base64,
+        "a2a_msg": a2a_msg.to_dict()
+    }
+
+    return {"prefetched": True, "turn": turn_data}
 
 @app.post("/api/turn/commit")
 async def commit_prefetched_turn(payload: CommitPayload):
