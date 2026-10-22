@@ -142,7 +142,7 @@ async def call_whisper(audio_bytes: bytes) -> str:
             files = {"file": ("audio.wav", wav_16k, "audio/wav")}
             data = {
                 "temperature": "0.0",
-                "prompt": "Sarah, Charlie, Roger, AI roundtable debate, podcast, question for Sarah, question for Charlie, question for Roger"
+                "prompt": "Sarah, Charlie, Roger, artificial intelligence podcast debate."
             }
             resp = await client.post(DEFAULT_SERVER_URL, files=files, data=data, timeout=30)
             if resp.status_code != 200:

@@ -991,14 +991,14 @@ if (gateSlider) {
 }
 
 function startRecordingSession(isManual = false) {
-  if (isInterruptionInFlight) return;
+  isInterruptionInFlight = false;
   recordingStartTime = Date.now();
   isSpeakingDetected = true;
   isManualRecording = isManual;
   liveRecognizedText = "";
 
   // Immediately mute/stop any actively speaking agent (< 20ms barge-in)
-  if (audioPlayer && !audioPlayer.paused) {
+  if (audioPlayer) {
     audioPlayer.pause();
     audioPlayer.currentTime = 0;
   }
