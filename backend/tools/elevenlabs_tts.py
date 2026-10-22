@@ -18,7 +18,7 @@ async def synthesize(text: str, voice_id: str = DEFAULT_VOICE_ID) -> bytes:
     if not api_key:
         raise ValueError("ELEVENLABS_API_KEY is not set in environment or .env file")
 
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?optimize_streaming_latency=4&output_format=mp3_22050_32"
     headers = {
         "xi-api-key": api_key,
         "Content-Type": "application/json",

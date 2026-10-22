@@ -283,7 +283,29 @@ function clearChatUI() {
   if (micStatusText) micStatusText.textContent = "🎙️ History cleared. Ready for fresh debate!";
 }
 
-// Unified Turn Handler
+// Unified Turn Handler & Look-Ahead Pipeline
+let precomputedTurn = null;
+let isPrefetching = false;
+
+async function prefetchNextTurn() {
+  if (!isRunning || isPrefetching || precomputedTurn || isInterruptionInFlight) return;
+  isPrefetching = true;
+  try {
+    const res = await fetch(`${API_BASE}/api/turn/prefetch`, { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.turn && isRunning && !isInterruptionInFlight) {
+        precomputedTurn = data.turn;
+        console.log("⚡ Look-ahead pre-fetched next speaker ready:", precomputedTurn.sender);
+      }
+    }
+  } catch (e) {
+    console.warn("Prefetch warning:", e);
+  } finally {
+    isPrefetching = false;
+  }
+}
+
 function handleTurnPayload(payload) {
   if (!payload || !payload.content) return;
   const turnKey = payload.content.trim();
@@ -307,12 +329,33 @@ function handleTurnPayload(payload) {
       isAudioPlaying = false;
       isInterruptionInFlight = false;
       if (isRunning) {
-        // Natural 1.4s conversational pause before next panelist speaks
-        nextTurnTimer = setTimeout(triggerNextTurn, 1400);
+        // If look-ahead pre-fetched turn is ready, play immediately (200ms natural breath pause)!
+        if (precomputedTurn) {
+          const nextTurnToPlay = precomputedTurn;
+          precomputedTurn = null;
+          nextTurnTimer = setTimeout(async () => {
+            try {
+              await fetch(`${API_BASE}/api/turn/commit`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ turn: nextTurnToPlay })
+              });
+            } catch (e) {}
+            handleTurnPayload(nextTurnToPlay);
+          }, 200);
+        } else {
+          // Fallback if prefetch still in flight
+          nextTurnTimer = setTimeout(triggerNextTurn, 400);
+        }
       }
     });
+
+    // Pipelined Look-Ahead: Kick off the NEXT speaker's answer in the background while this audio plays!
+    if (isRunning && !isInterruptionInFlight) {
+      setTimeout(prefetchNextTurn, 500);
+    }
   } else {
-    // If no audio (or fallback), hold speaking state for 2.5s then continue
+    // If no audio (or fallback), hold speaking state for 2s then continue
     setOrbState("talking", payload.agent_id);
     setTimeout(() => {
       setOrbState("idle", null);
@@ -320,9 +363,15 @@ function handleTurnPayload(payload) {
       isAudioPlaying = false;
       isInterruptionInFlight = false;
       if (isRunning) {
-        nextTurnTimer = setTimeout(triggerNextTurn, 1400);
+        if (precomputedTurn) {
+          const nextTurnToPlay = precomputedTurn;
+          precomputedTurn = null;
+          handleTurnPayload(nextTurnToPlay);
+        } else {
+          nextTurnTimer = setTimeout(triggerNextTurn, 500);
+        }
       }
-    }, 2500);
+    }, 2000);
   }
 }
 
@@ -833,6 +882,7 @@ function startRecordingSession(isManual = false) {
   }
   isAudioPlaying = false;
   isProcessingTurn = true;
+  precomputedTurn = null; // Flush lookahead queue immediately
   if (nextTurnTimer) {
     clearTimeout(nextTurnTimer);
     nextTurnTimer = null;
@@ -1066,9 +1116,11 @@ async function ensureMicStreamInitialized() {
           }
         } else if (isSpeakingDetected && rms < (vadThreshold * 0.70)) {
           if (!speechSilenceTimer) {
+            // When words are recognized, 450ms silence pause delivers immediate conversational turnaround!
+            const silenceDelay = (liveRecognizedText && liveRecognizedText.trim().length > 3) ? 450 : 750;
             speechSilenceTimer = setTimeout(() => {
               stopAndSendRecording();
-            }, 850);
+            }, silenceDelay);
           }
         }
       }

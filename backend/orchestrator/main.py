@@ -246,6 +246,176 @@ async def trigger_turn(target_agent: Optional[str] = None):
             "audio_length": len(audio_bytes)
         }
 
+class CommitPayload(BaseModel):
+    turn: Dict[str, Any]
+
+@app.post("/api/turn/prefetch")
+async def prefetch_turn():
+    """Look-ahead precomputation: prepares the next agent turn and synthesizes audio while current audio is playing."""
+    async with ROUNDTABLE_LOCK:
+        last_agent = get_last_speaker_id()
+        if not PODCAST_STATE["history"]:
+            target_agent = "host"
+            a2a_intent = A2AIntent.OPEN_ROUNDTABLE
+            dimension = "Show Introduction"
+            claim = f"Opening roundtable on: {PODCAST_STATE['topic']}"
+        elif last_agent == "host":
+            target_agent = "technologist"
+            a2a_intent = A2AIntent.PROPOSAL
+            battleground = topic_engine.get_current_battleground()
+            dimension = battleground.get("dimension", "Innovation Angle")
+            claim = "Charlie proposing practical engineering arguments."
+        elif last_agent == "technologist":
+            target_agent = "ethicist"
+            a2a_intent = A2AIntent.CHALLENGE
+            battleground = topic_engine.get_current_battleground()
+            dimension = battleground.get("dimension", "Safety & Risk")
+            claim = "Roger challenging Charlie on systemic accountability."
+        else:
+            target_agent = "host"
+            a2a_intent = A2AIntent.SYNTHESIZE
+            battleground = topic_engine.get_current_battleground()
+            dimension = battleground.get("dimension", "Moderation")
+            claim = "Sarah synthesizing debate tension and pushing next question."
+
+        persona = PERSONAS[target_agent]
+        battleground = topic_engine.get_current_battleground()
+        a2a_msg = A2AMessage(
+            sender_id=last_agent or "moderator",
+            receiver_id=persona.agent_id,
+            intent=a2a_intent,
+            dimension=dimension,
+            claim_summary=claim,
+            priority=0.85
+        )
+
+        novelty_rules = topic_engine.get_novelty_directives()
+        text_response = await generate_agent_response(
+            persona=persona,
+            history=PODCAST_STATE["history"],
+            topic=PODCAST_STATE["topic"],
+            battleground=battleground,
+            novelty_directives=novelty_rules
+        )
+
+        audio_base64 = ""
+        try:
+            audio_bytes = await synthesize(text=text_response, voice_id=persona.voice_id)
+            if audio_bytes:
+                import base64
+                audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+        except Exception as e:
+            print(f"Prefetch ElevenLabs synthesis warning: {e}")
+
+        turn_data = {
+            "agent_id": persona.agent_id,
+            "sender": persona.name,
+            "role": persona.role,
+            "content": text_response,
+            "audio_base64": audio_base64,
+            "a2a_msg": a2a_msg.to_dict()
+        }
+
+        return {"prefetched": True, "turn": turn_data}
+
+@app.post("/api/turn/commit")
+async def commit_prefetched_turn(payload: CommitPayload):
+    """Commits a pre-computed turn to official history and broadcasts once playback begins."""
+    async with ROUNDTABLE_LOCK:
+        turn_data = payload.turn
+        agent_id = turn_data.get("agent_id", "host")
+        persona = PERSONAS.get(agent_id, PERSONAS["host"])
+        PODCAST_STATE["active_speaker"] = persona.agent_id
+
+        a2a_dict = turn_data.get("a2a_msg")
+        if a2a_dict:
+            PODCAST_STATE["a2a_traces"].append(a2a_dict)
+            await broadcast_event("a2a_trace", a2a_dict)
+
+        clean_turn = {
+            "agent_id": persona.agent_id,
+            "sender": persona.name,
+            "role": persona.role,
+            "content": turn_data.get("content", "")
+        }
+        PODCAST_STATE["history"].append(clean_turn)
+        topic_engine.record_claim(clean_turn["content"][:80])
+
+        await broadcast_event("turn_started", clean_turn)
+        await broadcast_event("turn_completed", {
+            **clean_turn,
+            "has_audio": bool(turn_data.get("audio_base64")),
+            "audio_base64": turn_data.get("audio_base64", "")
+        })
+
+        return {"status": "committed", "turn": clean_turn}
+
+def resolve_target_agent(interruption_text: str, explicit_target: Optional[str] = None) -> str:
+    """
+    Intelligently determines which panelist the listener is addressing.
+    Handles complex patterns such as:
+    - 'Hey Charlie stop want to ask this question to Roger' -> ethicist (Roger)
+    - 'Charlie what is your perspective on this?' -> technologist (Charlie)
+    - 'I have a question for Sarah' -> host (Sarah)
+    """
+    import re
+    lower = interruption_text.lower()
+    score = {"host": 0, "technologist": 0, "ethicist": 0}
+
+    # 1. Strong directional targeting patterns
+    directional_patterns = [
+        (r'\b(?:to|for|ask|direct to|hear from|let|question to|question for)\s+roger\b', "ethicist", 12),
+        (r'\b(?:to|for|ask|direct to|hear from|let|question to|question for)\s+charlie\b', "technologist", 12),
+        (r'\b(?:to|for|ask|direct to|hear from|let|question to|question for)\s+sarah\b', "host", 12),
+        (r'\broger\s+(?:answer|tell|what|how|why|respond)\b', "ethicist", 9),
+        (r'\bcharlie\s+(?:answer|tell|what|how|why|respond)\b', "technologist", 9),
+        (r'\bsarah\s+(?:answer|tell|what|how|why|respond)\b', "host", 9),
+        (r'\bquestion\s+(?:for|to)\s+(?:the\s+)?ethic(?:ist)?\b', "ethicist", 9),
+        (r'\bquestion\s+(?:for|to)\s+(?:the\s+)?tech(?:nologist)?\b', "technologist", 9),
+        (r'\bquestion\s+(?:for|to)\s+(?:the\s+)?host\b', "host", 9),
+    ]
+    for pattern, agent, weight in directional_patterns:
+        if re.search(pattern, lower):
+            score[agent] += weight
+
+    # 2. Negation / Stop patterns (disqualify the speaker being interrupted)
+    negation_patterns = [
+        (r'\b(?:stop|shut up|pause|hold on|wait|quiet|not)\s+charlie\b', "technologist", -15),
+        (r'\bcharlie\s+(?:stop|shut up|pause|hold on|wait)\b', "technologist", -15),
+        (r'\b(?:stop|shut up|pause|hold on|wait|quiet|not)\s+roger\b', "ethicist", -15),
+        (r'\broger\s+(?:stop|shut up|pause|hold on|wait)\b', "ethicist", -15),
+        (r'\b(?:stop|shut up|pause|hold on|wait|quiet|not)\s+sarah\b', "host", -15),
+        (r'\bsarah\s+(?:stop|shut up|pause|hold on|wait)\b', "host", -15),
+    ]
+    for pattern, agent, penalty in negation_patterns:
+        if re.search(pattern, lower):
+            score[agent] += penalty
+
+    # 3. Simple presence weighting with recency (names near the end get higher weight)
+    for agent_key, names in [
+        ("host", ["sarah", "moderator", "host"]),
+        ("technologist", ["charlie", "technologist", "hacker"]),
+        ("ethicist", ["roger", "ethicist", "governance", "safety scholar"])
+    ]:
+        for name in names:
+            idx = lower.rfind(name)
+            if idx != -1:
+                score[agent_key] += 2 + (idx / max(len(lower), 1)) * 4
+
+    best_agent = max(score, key=score.get)
+    if score[best_agent] > 0:
+        return best_agent
+
+    if explicit_target and explicit_target in PERSONAS and explicit_target != "all":
+        return explicit_target
+
+    last_agent = get_last_speaker_id()
+    if last_agent == "technologist":
+        return "ethicist"
+    elif last_agent == "ethicist":
+        return "technologist"
+    return "technologist"
+
 @app.post("/api/interrupt")
 async def handle_human_interruption(
     file: Optional[UploadFile] = File(None),
@@ -280,30 +450,7 @@ async def handle_human_interruption(
                     }
 
         # Smart Intent & Name Detection from Spoken Utterance
-        lower_text = interruption_text.lower()
-        detected_agent = None
-        if "charlie" in lower_text or "technologist" in lower_text:
-            detected_agent = "technologist"
-        elif "roger" in lower_text or "ethic" in lower_text or "safety scholar" in lower_text or "policy" in lower_text:
-            detected_agent = "ethicist"
-        elif "sarah" in lower_text or "host" in lower_text or "moderator" in lower_text:
-            detected_agent = "host"
-
-        agent_cycle = ["host", "technologist", "ethicist"]
-        if detected_agent:
-            routed_agent_id = detected_agent
-        elif target_agent and target_agent in PERSONAS and target_agent != "all":
-            routed_agent_id = target_agent
-        else:
-            # Cycle to the other panelist so debate continues seamlessly
-            last_agent = get_last_speaker_id()
-            if last_agent == "technologist":
-                routed_agent_id = "ethicist"
-            elif last_agent == "ethicist":
-                routed_agent_id = "technologist"
-            else:
-                routed_agent_id = "technologist"
-
+        routed_agent_id = resolve_target_agent(interruption_text, target_agent)
         persona = PERSONAS[routed_agent_id]
         PODCAST_STATE["active_speaker"] = persona.agent_id
 

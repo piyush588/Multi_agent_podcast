@@ -139,12 +139,12 @@ async def generate_agent_response(
                         "messages": messages,
                         "stream": False,
                         "options": {
-                            "temperature": 0.76,
+                            "temperature": 0.72 if user_interruption else 0.76,
                             "top_p": 0.9,
                             "repeat_penalty": 1.25,
                             "presence_penalty": 0.5,
                             "frequency_penalty": 0.3,
-                            "num_predict": 160
+                            "num_predict": 55 if user_interruption else 100
                         }
                     }
                 )
