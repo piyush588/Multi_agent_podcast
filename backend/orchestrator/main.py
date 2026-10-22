@@ -451,11 +451,23 @@ async def handle_human_interruption(
         interruption_text = interruption_text.strip()
         words = interruption_text.split()
         lower_text = interruption_text.lower()
-        if not interruption_text or len(interruption_text) < 4 or (len(words) < 2 and not any(k in lower_text for k in ["charlie", "roger", "sarah", "why", "how", "what", "stop", "wait"])):
+        is_command = any(k in lower_text for k in ["stop", "wait", "hold on", "pause", "be quiet"])
+        has_question_term = any(k in lower_text for k in ["why", "how", "what", "who", "when", "where", "can", "should", "do", "think", "tell", "explain", "question"])
+
+        if not interruption_text or len(interruption_text) < 4:
             return {
                 "status": "silence",
                 "interruption": interruption_text,
                 "message": "No clear speech detected or ambient noise filtered",
+                "response": None
+            }
+
+        # If utterance is fewer than 3 words and is just an agent's name (e.g. "Sarah", "Hey Charlie") without an actual question/command, do not trigger a premature response
+        if len(words) < 3 and not (is_command or has_question_term):
+            return {
+                "status": "silence",
+                "interruption": interruption_text,
+                "message": f"Waiting for full question after '{interruption_text}'",
                 "response": None
             }
 

@@ -1241,8 +1241,13 @@ async function ensureMicStreamInitialized() {
           }
         } else if (isSpeakingDetected && rms < (vadThreshold * 0.70)) {
           if (!speechSilenceTimer) {
-            // When words are recognized, 450ms silence pause delivers immediate conversational turnaround!
-            const silenceDelay = (liveRecognizedText && liveRecognizedText.trim().length > 3) ? 450 : 750;
+            // Conversational silence delay: 1300ms-1600ms ensures natural pauses/breaths mid-question are not cut off
+            const duration = Date.now() - recordingStartTime;
+            const words = (liveRecognizedText || "").trim().split(/\s+/).filter(Boolean);
+            let silenceDelay = 1300;
+            if (words.length <= 3 || duration < 2000) {
+              silenceDelay = 1600; // Extra breathing room when caller starts or calls a name
+            }
             speechSilenceTimer = setTimeout(() => {
               stopAndSendRecording();
             }, silenceDelay);
