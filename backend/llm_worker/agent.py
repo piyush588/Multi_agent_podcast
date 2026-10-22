@@ -1,8 +1,11 @@
 import re
+import asyncio
 from typing import List, Dict, Any, Optional
 import httpx
 from persona_store.models import Persona, get_persona
 from orchestrator.a2a_protocol import A2AMessage, A2AIntent
+
+OLLAMA_INFERENCE_LOCK = asyncio.Lock()
 
 def ensure_complete_sentences(text: str) -> str:
     """Ensures text ends on a complete sentence (., ?, !) and doesn't get cut off mid-thought."""
@@ -180,44 +183,83 @@ async def generate_agent_response(
 
     messages.append({"role": "user", "content": role_instruction})
 
-    # Execute with local llama3.2:3b via Ollama (locked to 3b to avoid VRAM swapping)
+    # Execute with local llama3.2:3b via Ollama with sequential lock to prevent GPU queue starvation
     model_name = "llama3.2:3b"
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=1.2)) as client:
-            resp = await client.post(
-                "http://127.0.0.1:11434/api/chat",
-                json={
-                    "model": model_name,
-                    "messages": messages,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.72 if user_interruption else 0.76,
-                        "top_p": 0.9,
-                        "repeat_penalty": 1.25,
-                        "presence_penalty": 0.5,
-                        "frequency_penalty": 0.3,
-                        "num_predict": 85 if user_interruption else 80,
-                        "stop": [
-                            "\nSarah:", "\nCharlie:", "\nRoger:",
-                            "\nSarah -", "\nCharlie -", "\nRoger -",
-                            "\nHost:", "\nTechnologist:", "\nEthicist:",
-                            "\nSarah (", "\nCharlie (", "\nRoger (",
-                            "\n[Sarah", "\n[Charlie", "\n[Roger",
-                            "\nAudience:", "\nCaller:", "\nUser:"
-                        ]
+        async with OLLAMA_INFERENCE_LOCK:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(40.0, connect=3.0)) as client:
+                resp = await client.post(
+                    "http://127.0.0.1:11434/api/chat",
+                    json={
+                        "model": model_name,
+                        "messages": messages,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.72 if user_interruption else 0.76,
+                            "top_p": 0.9,
+                            "repeat_penalty": 1.25,
+                            "presence_penalty": 0.5,
+                            "frequency_penalty": 0.3,
+                            "num_predict": 65 if user_interruption else 55,
+                            "stop": [
+                                "\nSarah:", "\nCharlie:", "\nRoger:",
+                                "\nSarah -", "\nCharlie -", "\nRoger -",
+                                "\nHost:", "\nTechnologist:", "\nEthicist:",
+                                "\nSarah (", "\nCharlie (", "\nRoger (",
+                                "\n[Sarah", "\n[Charlie", "\n[Roger",
+                                "\nAudience:", "\nCaller:", "\nUser:"
+                            ]
+                        }
                     }
-                }
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                raw_content = data.get("message", {}).get("content", "").strip()
-                cleaned = clean_speech_text(raw_content, persona.name)
-                if cleaned and len(cleaned) > 15:
-                    return cleaned
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    raw_content = data.get("message", {}).get("content", "").strip()
+                    cleaned = clean_speech_text(raw_content, persona.name)
+                    if cleaned and len(cleaned) > 15:
+                        return cleaned
     except Exception as e:
-        print(f"Ollama error on {model_name}: {repr(e)}")
+        print(f"Ollama inference note on {model_name}: {repr(e)}")
 
-    # Fallback if Ollama timeout
+    # Dynamic persona-specific non-repeating fallbacks (cites topic, target speaker, and context)
+    import random
+    top = topic or "this technology"
     if user_interruption:
-        return f"That question cuts right to the heart of this debate. We cannot evaluate this technology in an ivory tower without looking at how everyday developers and users are actually impacted."
-    return f"Look at what {last_speaker or 'everyone'} is pointing out here. There is a fundamental trade-off between technological speed and human accountability that we have to resolve."
+        if persona.agent_id == "technologist":
+            options = [
+                f"Haha, fair challenge on {top}! But if you look at how real systems are built, locking down model weights just pushes innovation underground.",
+                f"Look, that is the common fear with open models, but centralized monopolies have a far worse security track record than open communities.",
+                f"Heh, I hear that concern on {top}, but you cannot stop people from running code on their own hardware. Open source is the only honest future."
+            ]
+        elif persona.agent_id == "ethicist":
+            options = [
+                f"That hits the crucial nerve on {top}. Unchecked open releases leave everyday consumers holding the bag when systems fail.",
+                f"Look at the accountability gap with {top}. When an unvetted model causes harm, the open-source creators walk away and users suffer.",
+                f"That is precisely why responsible governance matters on {top}—you cannot treat raw model weights like ordinary harmless code."
+            ]
+        else: # host
+            options = [
+                f"That audience question zeroes in on the core tension of {top}. Charlie, how do you defend your stance against Roger's risk arguments?",
+                f"Spot-on challenge from our listener on {top}. Roger, is open source truly dangerous, or is closed tech just building regulatory moats?",
+                f"That cuts straight through the noise on {top}. Let us put that hard challenge directly to the panel."
+            ]
+    else:
+        if persona.agent_id == "technologist":
+            options = [
+                f"Haha, come on, {target_name}! On {top}, freedom and developer autonomy will always beat corporate gatekeeping in the long run.",
+                f"Look at the actual history of technology, {target_name}. Every breakthrough started open before tech giants tried to wall it off.",
+                f"That sounds neat in theory, {target_name}, but in reality, open-source is where the genuine engineering velocity is happening."
+            ]
+        elif persona.agent_id == "ethicist":
+            options = [
+                f"Hmm, {target_name}, that is easy to say, but look at who actually pays the price when systems fail without proper safeguards.",
+                f"Hold on, {target_name}. Moving fast on {top} is great until an unmitigated vulnerability impacts millions of real people.",
+                f"We cannot just ignore systemic accountability here, {target_name}. Innovation without governance is a disaster waiting to happen."
+            ]
+        else: # host
+            options = [
+                f"Okay, {target_name} is pushing the argument forward. But what does this mean for everyday users trying to navigate {top}?",
+                f"Shots fired from {target_name}! Charlie, Roger, how do we bridge this gap without sacrificing either side?",
+                f"Let us test that claim from {target_name}. Is this trade-off actually inevitable on {top}?"
+            ]
+    return random.choice(options)

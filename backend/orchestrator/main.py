@@ -442,18 +442,31 @@ def resolve_target_agent(interruption_text: str, explicit_target: Optional[str] 
     return "technologist"
 
 def extract_core_question(text: str) -> str:
-    """Strips rambles, fillers, and false starts so agents debate the core user thought."""
+    """Strips rambles, fillers, repetitions, and hallucinated outro noise."""
     text = text.strip(" \t\n\r\"'")
-    # 1. Filter out pure noise / thank you artifacts
+    if not text:
+        return ""
+
+    # 1. Filter out pure noise / thank you / outro hallucinations
     noise_triggers = [
         r'^(?:thank\s+you|thanks|cheers|bye|okay\s+bye|you)[\s\.\!\?]*$',
-        r'^(?:so+|um+|uh+|ah+|ok|okay)[\s\.\!\?]*$'
+        r'^(?:so+|um+|uh+|ah+|ok|okay)[\s\.\!\?]*$',
+        r'^(?:we\s+will\s+see\s+you|see\s+you|see\s+you\s+next\s+time|welcome\s+to\s+the\s+next)[\s\w\.\!\?]*$',
+        r'^(?:welcome\s+back|until\s+next\s+time|thanks\s+for\s+watching)[\s\w\.\!\?]*$'
     ]
     for pat in noise_triggers:
         if re.match(pat, text, flags=re.IGNORECASE):
             return ""
 
-    # 2. Strip opening conversational fluff & padding
+    # 2. Reject repetition degeneration loops
+    words = [w.lower() for w in re.findall(r'\b\w+\b', text)]
+    if len(words) >= 6:
+        for chunk_len in range(3, 7):
+            if len(words) >= chunk_len * 2:
+                if words[:chunk_len] == words[chunk_len:chunk_len*2]:
+                    return ""
+
+    # 3. Strip opening conversational fluff & padding
     preambles = [
         r'^(?:um+|uh+|ah+|so+|like|well|yeah|listen|wait|hold on|look|basically)[\s,]+',
         r'^(?:i\s+(?:just\s+)?(?:wanted to|wanna|was wondering|was thinking|have a question|had a question)\s+(?:about|if|why|how|what)?[\s,:]*)',

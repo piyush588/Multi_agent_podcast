@@ -53,11 +53,24 @@ KNOWN_HALLUCINATIONS = {
     "hmm",
     "shh",
     "peace",
-    "cheers"
+    "cheers",
+    "we will see you next time",
+    "see you next time",
+    "see you in the next video",
+    "see you guys next time",
+    "welcome to the next discussion",
+    "welcome back to the discussion",
+    "in the next episode",
+    "in the next video",
+    "until next time",
+    "watch next",
+    "thanks for stopping by",
+    "have a good day",
+    "thank you for your time"
 }
 
 def clean_whisper_text(raw_text: str) -> str:
-    """Removes annotations, brackets, and known noise hallucinations."""
+    """Removes annotations, brackets, repetition loops, and known noise hallucinations."""
     if not raw_text:
         return ""
     # Remove bracketed/parenthetical text like [BLANK_AUDIO], (music), [applause]
@@ -67,13 +80,26 @@ def clean_whisper_text(raw_text: str) -> str:
     clean = re.sub(r'\b[b-hj-zB-HJ-Z]\b', '', clean)
     clean = re.sub(r'\s+', ' ', clean).strip()
 
-    # Normalize lower for blacklist check
+    # 1. Normalize lower for blacklist check
     lower = clean.lower().strip(" .!?,:;'\"")
-    if lower in KNOWN_HALLUCINATIONS or not lower:
-        return ""
+    for phrase in KNOWN_HALLUCINATIONS:
+        if lower == phrase or lower.startswith(phrase + ".") or lower.startswith(phrase + "!"):
+            return ""
 
-    # Reject if only punctuation or empty
-    words = [w for w in re.findall(r'\b\w+\b', clean)]
+    # 2. REPETITION LOOP DETECTOR (Classic Whisper failure mode on silence)
+    # e.g., "I'm not sure what to do with this. I'm not sure what to do with this..."
+    words = [w.lower() for w in re.findall(r'\b\w+\b', clean)]
+    if len(words) >= 6:
+        # Check for 3-6 word phrases repeating consecutively
+        for chunk_len in range(3, 8):
+            if len(words) >= chunk_len * 2:
+                first_chunk = words[:chunk_len]
+                second_chunk = words[chunk_len:chunk_len*2]
+                if first_chunk == second_chunk:
+                    print(f"🛑 Dropped Whisper repetition loop: '{clean[:60]}...'")
+                    return ""
+
+    # 3. Reject if only punctuation, ultra-short, or empty
     if len(words) < 2 and not any(k in lower for k in ["charlie", "roger", "sarah", "why", "how", "what", "stop"]):
         return ""
 

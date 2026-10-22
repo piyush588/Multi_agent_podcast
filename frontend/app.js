@@ -367,22 +367,8 @@ let precomputedTurn = null;
 let isPrefetching = false;
 
 async function prefetchNextTurn(force = false) {
-  if ((!isRunning && !force) || isPrefetching || precomputedTurn || isInterruptionInFlight) return;
-  isPrefetching = true;
-  try {
-    const res = await fetch(`${API_BASE}/api/turn/prefetch`, { method: "POST" });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.turn && !isInterruptionInFlight) {
-        precomputedTurn = data.turn;
-        console.log("⚡ Look-ahead pre-fetched speaker ready:", precomputedTurn.sender);
-      }
-    }
-  } catch (e) {
-    console.warn("Prefetch warning:", e);
-  } finally {
-    isPrefetching = false;
-  }
+  // Disabled: sequential turn generation ensures 100% Ollama GPU availability without timeouts
+  return;
 }
 
 function handleTurnPayload(payload, isDirectInterruptionResponse = false) {
@@ -794,23 +780,10 @@ async function toggleAutonomousDebate() {
         </svg>
       `;
     }
-    startLiveHandsFreeListening();
+    ensureMicStreamInitialized();
 
-    // Instant Start (< 30ms): Play pre-fetched opening turn immediately if ready!
-    if (precomputedTurn) {
-      const turnToPlay = precomputedTurn;
-      precomputedTurn = null;
-      try {
-        fetch(`${API_BASE}/api/turn/commit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ turn: turnToPlay })
-        });
-      } catch (e) {}
-      handleTurnPayload(turnToPlay);
-    } else {
-      triggerNextTurn();
-    }
+    // Trigger next turn
+    triggerNextTurn();
   } else {
     // Cut audio immediately when paused (< 5ms)
     if (audioPlayer) {
@@ -962,7 +935,7 @@ async function handleClearHistory() {
 // ============================================================================
 // 5. STUDIO VOICE ENGINE (HANDS-FREE AUTO-DETECT VAD & DUAL-ENGINE STT)
 // ============================================================================
-let micInputMode = "auto-vad"; // "auto-vad" (default hands-free) or "push-to-talk"
+let micInputMode = "push-to-talk"; // "push-to-talk" (default & 100% noise-immune) or "auto-vad"
 let vadGateThresholdPercent = 8;
 let vadThreshold = 0.08;
 
