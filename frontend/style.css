@@ -1118,11 +1118,35 @@ body {
   font-size: 12px;
 }
 
-.caption-word-active {
-  color: var(--accent-peach);
+.caption-word-active,
+.caption-live-word {
+  color: #FF6B4A;
   font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  border-bottom: 2px solid rgba(255, 107, 74, 0.45);
+  animation: pulseLiveWord 0.7s ease-in-out infinite alternate;
+}
+
+.caption-active-dot {
+  color: #EF4444;
+  font-size: 11px;
+  margin-right: 5px;
+  display: inline-block;
+  animation: blinkActiveDot 0.9s steps(2, start) infinite;
+}
+
+.caption-hint {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 13px;
+}
+
+@keyframes pulseLiveWord {
+  from { opacity: 0.82; }
+  to { opacity: 1; color: #DC2626; }
+}
+
+@keyframes blinkActiveDot {
+  to { opacity: 0.2; }
 }
 
 .chat-messages {

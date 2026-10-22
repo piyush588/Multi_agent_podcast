@@ -938,92 +938,114 @@ async function startLiveHandsFreeListening() {
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let browserRecognizer = null;
 let liveRecognizedText = "";
+let speechSessionText = "";
+let interimSpeechText = "";
 let isSpeechRecognitionActive = false;
 
-// Live Real-Time Auto-Caption Dock Bridge Helpers
-function updateLiveCaptionBubble(text, statusTitle = "YOU ARE SPEAKING") {
-  setUserCaptionState("speaking", statusTitle);
-  updateUserCaptionText(text || "Listening to your voice...");
+function escapeHtml(str) {
+  if (!str) return "";
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function finalizeLiveCaptionBubble(finalText, routedTo = "") {
-  setUserCaptionState("captured", "YOU ASKED");
-  updateUserCaptionText(finalText);
-  return false; // Prompts caller to use unified appendTranscript()
-}
-
-function removeLiveCaptionBubble() {
-  resetUserCaption();
-}
-
-function updateLiveAutoCaptionText(text) {
-  updateUserCaptionText(text);
-}
-
-function setLiveAutoCaptionSpeaker(speaker, role, isUser = false) {
-  if (isUser) {
-    setUserCaptionState("speaking", "YOU (AUDIENCE)");
+function setupSpeechRecognizer() {
+  if (!SpeechRecognition) {
+    console.warn("Web Speech API not supported in this browser; falling back exclusively to local Whisper.");
+    return;
   }
-}
-
-function resetLiveAutoCaption() {
-  resetUserCaption();
-}
-
-function initContinuousSpeechRecognition() {
-  if (!SpeechRecognition || browserRecognizer) return;
   try {
+    if (browserRecognizer) {
+      try { browserRecognizer.abort(); } catch (e) {}
+      browserRecognizer = null;
+    }
+
     browserRecognizer = new SpeechRecognition();
     browserRecognizer.continuous = true;
     browserRecognizer.interimResults = true;
+    browserRecognizer.maxAlternatives = 1;
     browserRecognizer.lang = "en-US";
 
     browserRecognizer.onstart = () => {
       isSpeechRecognitionActive = true;
+      console.log("🎙️ Live SpeechRecognition active");
     };
 
     browserRecognizer.onresult = (event) => {
-      let finalStr = "";
-      let interimStr = "";
+      let currentSessionFinal = "";
+      let currentSessionInterim = "";
+
       for (let i = 0; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalStr += " " + event.results[i][0].transcript;
+        const item = event.results[i];
+        if (item.isFinal) {
+          currentSessionFinal += " " + item[0].transcript;
         } else {
-          interimStr += event.results[i][0].transcript;
+          currentSessionInterim += item[0].transcript;
         }
       }
-      const combined = (finalStr + " " + interimStr).trim();
-      if (combined) {
-        liveRecognizedText = combined;
-        if (interruptText) interruptText.value = combined;
-        if (micStatusText) micStatusText.textContent = `🎙️ Heard: "${combined}"`;
-        // Show live real-time auto-caption immediately in Live Auto-Caption Dock
-        setUserCaptionState("speaking", "YOU ARE SPEAKING");
-        updateUserCaptionText(combined);
+
+      speechSessionText = currentSessionFinal.trim();
+      interimSpeechText = currentSessionInterim.trim();
+
+      const fullDisplay = (speechSessionText + " " + interimSpeechText).trim();
+      if (fullDisplay) {
+        liveRecognizedText = fullDisplay;
+        if (interruptText) interruptText.value = fullDisplay;
+        if (micStatusText) micStatusText.textContent = `🎙️ "${fullDisplay}"`;
+
+        // Render Live Auto-Caption Word-by-Word in Real Time
+        setUserCaptionState("speaking", "YOU ARE SPEAKING...");
+        if (captionDisplayText) {
+          if (interimSpeechText) {
+            captionDisplayText.innerHTML = `<span>${escapeHtml(speechSessionText)} </span><span class="caption-live-word">${escapeHtml(interimSpeechText)}</span>`;
+          } else {
+            captionDisplayText.textContent = speechSessionText;
+          }
+        }
       }
     };
 
     browserRecognizer.onerror = (e) => {
       if (e.error !== "no-speech") {
-        console.warn("Browser SpeechRecognition notice:", e.error);
+        console.warn("SpeechRecognition notice:", e.error);
+      }
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        isSpeechRecognitionActive = false;
       }
     };
 
     browserRecognizer.onend = () => {
       isSpeechRecognitionActive = false;
-      // Keep speech recognition continuously warm if mic is active
-      if (isLiveMicActive) {
-        try {
-          browserRecognizer.start();
-        } catch (e) {}
+      // Auto-restart if user microphone is still on and we are not processing backend interruption
+      if (isLiveMicActive && !isInterruptionInFlight) {
+        setTimeout(() => {
+          if (isLiveMicActive && !isSpeechRecognitionActive && !isInterruptionInFlight) {
+            try {
+              browserRecognizer && browserRecognizer.start();
+            } catch (e) {}
+          }
+        }, 120);
       }
     };
+  } catch (err) {
+    console.warn("Speech recognition setup notice:", err);
+  }
+}
 
+function ensureSpeechRecognitionActive() {
+  if (!SpeechRecognition) return;
+  if (!browserRecognizer) {
+    setupSpeechRecognizer();
+  }
+  if (browserRecognizer && !isSpeechRecognitionActive) {
     try {
       browserRecognizer.start();
-    } catch (e) {}
-  } catch (err) {
-    console.warn("SpeechRecognition init error:", err);
+    } catch (e) {
+      try {
+        browserRecognizer.abort();
+      } catch (err) {}
+      setTimeout(() => {
+        try { browserRecognizer && browserRecognizer.start(); } catch (err) {}
+      }, 50);
+    }
   }
 }
 
@@ -1098,10 +1120,16 @@ function startRecordingSession(isManual = false) {
       : "🎙️ Listening to you... (speak naturally)";
   }
 
-  // Ensure speech recognizer is active and immediately display live auto-caption in dock!
-  initContinuousSpeechRecognition();
+  // Reset active session text and guarantee recognizer is active
+  speechSessionText = "";
+  interimSpeechText = "";
+  liveRecognizedText = "";
+
+  ensureSpeechRecognitionActive();
   setUserCaptionState("speaking", "LISTENING TO YOU...");
-  updateUserCaptionText("Listening to your voice... Speak your question aloud.");
+  if (captionDisplayText) {
+    captionDisplayText.innerHTML = `<span class="caption-active-dot">●</span> <span class="caption-hint">Listening to your voice... Speak your question aloud.</span>`;
+  }
 
   liveAudioChunks = [];
   if (liveMediaRecorder && liveMediaRecorder.state === "inactive") {
@@ -1165,7 +1193,7 @@ async function ensureMicStreamInitialized() {
     });
 
     isLiveMicActive = true;
-    initContinuousSpeechRecognition();
+    setupSpeechRecognizer();
     if (micLiveDot) micLiveDot.classList.add("active");
     if (micBtn) micBtn.classList.add("active-mic");
 
